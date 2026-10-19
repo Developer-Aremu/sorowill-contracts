@@ -28,8 +28,14 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Added
 - `get_wills_by_owner_and_status_page`, returning a `WillPage` with the page's
   wills, the `total_count` of all matches and an explicit `next_cursor` (#455).
+- `WillError::MigrationInvariantViolation` (54): `migration::upgrade` now
+  validates the will after every migration step (version advances by exactly
+  one, `Triggered` wills keep a `trigger_time`, vote tallies fit the guardian
+  list, list caps and percentage totals hold) via `migration_rules.rs` (#596).
 - `WillError::DistributionMismatch` (39): release aborts if planned payouts for
   a token do not sum to exactly its balance (#456).
+- **CONTRACT_VERSION bumped to 1.3.1** (`1_003_001`) for the Valreb001 hardening
+  fixes (#596-#599).
 - **CONTRACT_VERSION bumped to 1.3.0** (`1_003_000`) for the `seq` field and
   check-in audit-trail entries described under #500 below.
 - `ProtocolStatsAudit`, the type `audit_protocol_stats` returns, was referenced

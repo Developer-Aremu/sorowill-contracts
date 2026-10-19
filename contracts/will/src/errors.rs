@@ -225,4 +225,10 @@ pub enum WillError {
     /// would wipe those votes and let a fresh trigger bypass a cancel that was
     /// accumulating against it, so the update is refused (#488).
     GuardianCancelInProgress = 53,
+    /// A schema migration produced a will that violates a structural
+    /// invariant (the version did not advance by exactly one step, a
+    /// `Triggered` will has no `trigger_time`, a vote tally exceeds the
+    /// guardian list, or the list caps / percentage total are exceeded), so
+    /// the migrated state is rejected instead of being persisted (#596).
+    MigrationInvariantViolation = 54,
 }
