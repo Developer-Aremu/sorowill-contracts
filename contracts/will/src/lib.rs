@@ -253,6 +253,8 @@ mod issue_guardian_vote_underflow_test;
 mod issue_620_test;
 #[cfg(test)]
 mod issue_621_test;
+#[cfg(test)]
+mod issue_622_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -1317,7 +1319,7 @@ impl WillContract {
         // call below) conditional on the grace period *not yet* having
         // expired, the exact opposite of this function's purpose.
         let now = env.ledger().timestamp();
-        if now < grace_deadline(&will) {
+        if now <= grace_deadline(&will) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
