@@ -255,6 +255,8 @@ mod issue_623_test;
 mod issue_624_test;
 #[cfg(test)]
 mod issue_625_test;
+#[cfg(test)]
+mod issue_626_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -2544,6 +2546,11 @@ impl WillContract {
     ///
     /// For totals across all pages (will count, locked value per token) call
     /// [`Self::get_owner_stats`] instead of iterating every page.
+    /// Returns one page of an owner's wills, starting after `cursor`.
+    ///
+    /// The cursor is a will id, so it stays valid when wills are cancelled between
+    /// calls: a page resumes from the first remaining id after the cursor. Cancelling
+    /// a will never makes the next page repeat an earlier one (#626).
     pub fn get_wills_by_owner(
         env: Env,
         owner: Address,
