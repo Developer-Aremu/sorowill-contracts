@@ -2871,6 +2871,9 @@ impl WillContract {
         let mut will = load_will(&env, will_id);
         assert_status(&env, &will, WillStatus::Active, WillError::WillNotActive);
 
+        // `now` is the ledger close time agreed by network consensus, so a vote's
+        // expiry window is measured in network time and one node's clock cannot
+        // stretch or shorten it (#636).
         // Enforce guardian-list cooldown.
         let now = env.ledger().timestamp();
         let cooldown_seconds = GUARDIAN_COOLDOWN_DAYS * SECONDS_PER_DAY;
