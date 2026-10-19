@@ -182,3 +182,24 @@ fn issue_593_confirm_fails_just_past_buffer() {
         .with_mut(|l| l.timestamp += 5 + CONFIRMATION_DEADLINE_BUFFER_SECONDS + 1);
     assert!(client.try_confirm_will(&will_id, &owner).is_err());
 }
+
+// ---------------------------------------------------------------------------
+// #594: a rejected guardian_trigger leaves no partial release behind
+// ---------------------------------------------------------------------------
+
+#[test]
+fn issue_594_rejected_guardian_trigger_leaves_will_unchanged() {
+    use crate::GuardianVoteReason;
+    let (env, client, owner, token) = setup();
+    let will_id = pending_will(&env, &client, &owner, &token, 0);
+    env.ledger()
+        .with_mut(|l| l.timestamp += (crate::GUARDIAN_COOLDOWN_DAYS + 1) * DAY);
+    let outsider = Address::generate(&env);
+    assert!(client
+        .try_guardian_trigger(&will_id, &outsider, &GuardianVoteReason::Other)
+        .is_err());
+    let will = client.get_will(&will_id);
+    assert_eq!(will.status, WillStatus::Active);
+    assert_eq!(will.guardian_votes, 0);
+    assert_eq!(will.balance, 1_000);
+}

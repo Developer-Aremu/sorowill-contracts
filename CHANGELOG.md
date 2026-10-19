@@ -60,6 +60,10 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Fixed
 - `renounce_beneficiary` redistribution now caps the percentage total at
   10,000 bps; the last remaining percentage beneficiary absorbs the rounding
+- Documented (docs/EVENT_ATOMICITY.md) that `guardian_trigger` and
+  `distribute` events are discarded with the state when the invocation fails,
+  and that `inheritance_released` is published only after every payout was
+  attempted; added a regression test (#594).
 - `confirm_will` allows one ledger interval (5 s, `deadline_precision`) of slack
   past `confirmation_deadline`, so coarse ledger timestamps no longer make an
   owner miss the window by a second or two; the minimum practical window is

@@ -2926,6 +2926,9 @@ impl WillContract {
         will.guardian_votes = live_votes;
         storage::save_will(&env, &will);
 
+        // Events are part of this invocation: if the release below fails, the
+        // host discards this event along with the state (see
+        // docs/EVENT_ATOMICITY.md, #594).
         events::guardian_voted(&env, will_id, &guardian, weight, will.guardian_vote_weight);
 
         if will.guardian_vote_weight >= will.guardian_threshold
