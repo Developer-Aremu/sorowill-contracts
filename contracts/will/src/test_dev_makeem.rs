@@ -146,3 +146,29 @@ fn batch_check_in_rejects_non_active_middle_element() {
     assert_eq!(err, WillError::WillNotActive.into());
     assert_eq!(client.get_will(&first).last_checkin, before_first);
 }
+
+#[test]
+fn owner_pagination_is_stable_when_a_will_is_added_mid_pagination() {
+    let (env, contract_id, owner, token) = setup();
+    let client = WillContractClient::new(&env, &contract_id);
+    let a = create_one(&env, &client, &owner, &token);
+    let b = create_one(&env, &client, &owner, &token);
+    let c = create_one(&env, &client, &owner, &token);
+
+    let page1 = client.get_wills_by_owner(&owner, &None, &2);
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1.get(0).unwrap().id, a);
+    assert_eq!(page1.get(1).unwrap().id, b);
+
+    // The collection grows between page requests.
+    let d = create_one(&env, &client, &owner, &token);
+
+    let page2 = client.get_wills_by_owner(&owner, &Some(b), &10);
+    assert_eq!(page2.len(), 2);
+    assert_eq!(page2.get(0).unwrap().id, c);
+    assert_eq!(page2.get(1).unwrap().id, d);
+
+    // A cursor past the last id yields an empty page rather than an error.
+    let page3 = client.get_wills_by_owner(&owner, &Some(d), &10);
+    assert_eq!(page3.len(), 0);
+}

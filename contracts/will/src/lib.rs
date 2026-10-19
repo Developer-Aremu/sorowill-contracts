@@ -2538,6 +2538,12 @@ impl WillContract {
     ///
     /// For totals across all pages (will count, locked value per token) call
     /// [`Self::get_owner_stats`] instead of iterating every page.
+    ///
+    /// # Consistency
+    /// The cursor is an id bound ("ids greater than `cursor`"), not a
+    /// position, so wills added or removed between pages never cause an
+    /// entry to be skipped or repeated; new wills appear on later pages.
+    /// Pages are not a snapshot. See `docs/PAGINATION_CONSISTENCY.md` (#591).
     pub fn get_wills_by_owner(
         env: Env,
         owner: Address,

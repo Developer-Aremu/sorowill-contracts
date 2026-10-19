@@ -94,6 +94,8 @@ gets its own [contract spec artifact](./spec) once exported.
 - `batch_check_in` validates every will (exists, owned, `Active`) in a
   read-only pass before writing anything; `batch_create_wills` documents its
   all-or-nothing atomicity (#590).
+- Documented `get_wills_by_owner` pagination consistency guarantees when the
+  collection changes mid-pagination, with a regression test (#591).
 - Guardian release/cancel votes are tallied from per-guardian records, so a
   guardian re-voting after expiry is no longer counted twice (#458).
 - The keeper bounty is deducted from the will's balance instead of being paid
