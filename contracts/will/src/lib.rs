@@ -249,6 +249,8 @@ mod issue_350_353_test;
 /// the recorded vote timestamp.
 #[cfg(test)]
 mod issue_guardian_vote_underflow_test;
+#[cfg(test)]
+mod issue_620_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -400,7 +402,7 @@ pub use types::{
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.

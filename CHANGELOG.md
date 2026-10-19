@@ -11,6 +11,7 @@ gets its own [contract spec artifact](./spec) once exported.
 ## [Unreleased]
 
 ### Security
+- Guardian release-vote weights are summed with an overflow check. A total that does not fit in a `u32` is rejected with `GuardianWeightOverflow` (error 54) instead of wrapping (#620).
 - `release_inheritance` re-reads the will from storage and re-validates that
   it is still `Triggered` (with a recorded `trigger_time`) immediately before
   distributing; documented that the atomic invocation locks the will for the
