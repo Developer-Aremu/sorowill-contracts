@@ -4650,16 +4650,41 @@ impl WillContract {
         will.hashed_beneficiaries = updated_hb;
         storage::save_will(&env, &will);
 
-        // --- INTERACTIONS: external token transfers execute after state is settled ---
+        // --- INTERACTIONS: external token transfers with try-catch rollback on failure ---
         let contract_address = env.current_contract_address();
+        let mut transfer_failed = false;
         for (token_addr, share) in transfer_plan.iter() {
             if share > 0 {
-                token::Client::new(&env, &token_addr).transfer(
+                let transfer_res = token::Client::new(&env, &token_addr).try_transfer(
                     &contract_address,
                     &claimant,
                     &share,
                 );
+                if transfer_res.is_err() {
+                    transfer_failed = true;
+                    storage::set_failed_payout(&env, will_id, &token_addr, &claimant, share);
+                    events::payout_failed(&env, will_id, &token_addr, &claimant, share);
+                }
             }
+        }
+
+        // If transfer fails, revert claimed flag so the claimant can re-attempt
+        if transfer_failed {
+            let mut reverted_hb: Vec<HashedBeneficiary> = Vec::new(&env);
+            for (i, entry) in will.hashed_beneficiaries.iter().enumerate() {
+                if i as u32 == idx {
+                    reverted_hb.push_back(HashedBeneficiary {
+                        commitment: entry.commitment.clone(),
+                        percentage: entry.percentage,
+                        claimed: false,
+                    });
+                } else {
+                    reverted_hb.push_back(entry.clone());
+                }
+            }
+            will.hashed_beneficiaries = reverted_hb;
+            storage::save_will(&env, &will);
+            return;
         }
 
         events::hashed_claimed(&env, will_id, &claimant, primary_share);
