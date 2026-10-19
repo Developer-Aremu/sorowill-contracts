@@ -124,3 +124,49 @@ fn upgrade_rejects_partially_migrated_triggered_state() {
     will.trigger_time = None;
     env.as_contract(&contract_id, || migration::upgrade(&env, will));
 }
+
+// ---------------------------------------------------------------------------
+// #598: guardian list replacement discards stale vote records
+// ---------------------------------------------------------------------------
+
+#[test]
+fn update_guardians_purges_votes_even_when_tally_is_zero() {
+    let (env, contract_id, owner, _token, will_id, gs) = setup(2);
+    let client = WillContractClient::new(&env, &contract_id);
+    let removed = gs.get(0).unwrap();
+    let kept = gs.get(1).unwrap();
+
+    // A leftover record whose tally was never counted on the will
+    // (`guardian_votes == 0`), as when an expired record is left behind.
+    env.as_contract(&contract_id, || {
+        storage::set_guardian_voted(
+            &env,
+            will_id,
+            &removed,
+            1_700_000_000,
+            crate::GuardianVoteReason::Other,
+        );
+    });
+
+    // Remove the guardian, then add them back.
+    client.update_guardians(&will_id, &owner, &vec![&env, kept.clone()]);
+    client.update_guardians(&will_id, &owner, &vec![&env, kept, removed.clone()]);
+
+    env.as_contract(&contract_id, || {
+        assert!(storage::get_guardian_vote(&env, will_id, &removed).is_none());
+    });
+    let will = client.get_will(&will_id);
+    assert_eq!(will.guardian_votes, 0);
+    assert_eq!(will.guardian_vote_weight, 0);
+}
+
+#[test]
+fn update_guardians_resets_the_cooldown_clock() {
+    let (env, contract_id, owner, _token, will_id, gs) = setup(2);
+    let client = WillContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(1_700_100_000);
+    client.update_guardians(&will_id, &owner, &vec![&env, gs.get(0).unwrap()]);
+
+    assert_eq!(client.get_will(&will_id).guardian_list_updated_at, 1_700_100_000);
+}

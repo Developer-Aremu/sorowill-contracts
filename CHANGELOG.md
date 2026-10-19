@@ -32,6 +32,10 @@ gets its own [contract spec artifact](./spec) once exported.
   validates the will after every migration step (version advances by exactly
   one, `Triggered` wills keep a `trigger_time`, vote tallies fit the guardian
   list, list caps and percentage totals hold) via `migration_rules.rs` (#596).
+- `update_guardians`, `update_guardians_weighted` and the guardian branch of
+  `update_will_settings` now remove every stored guardian vote record (live or
+  expired) before replacing the list, so a removed-then-re-added guardian can
+  never revive an old vote (#598).
 - `WillError::DistributionMismatch` (39): release aborts if planned payouts for
   a token do not sum to exactly its balance (#456).
 - **CONTRACT_VERSION bumped to 1.3.1** (`1_003_001`) for the Valreb001 hardening

@@ -322,6 +322,7 @@ mod issue_278_test;
 mod issue_279_test;
 #[cfg(test)]
 mod issue_280_test;
+mod guardian_vote_purge;
 mod migration_rules;
 #[cfg(test)]
 mod test_valreb001;
@@ -1868,6 +1869,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for addr in guardians.iter() {
@@ -1970,6 +1972,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for g in guardians.iter() {
@@ -2158,6 +2161,7 @@ impl WillContract {
 
             let now = env.ledger().timestamp();
             storage::reset_guardian_votes(&env, &will);
+            guardian_vote_purge::purge_guardian_vote_records(&env, &will);
             storage::reset_guardian_cancel_votes(&env, &will);
             let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
             for addr in new_guardians.iter() {
