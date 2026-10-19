@@ -68,6 +68,7 @@ mod fuzz_test;
 #[cfg(test)]
 mod test_dev_makeem;
 mod grace_boundary;
+mod batch_atomicity;
 
 /// Unit tests for the mixed percentage/fixed-amount `Allocation` model.
 #[cfg(test)]
@@ -1063,6 +1064,10 @@ impl WillContract {
         // partially applied and the `batch_checkin` count always matches the
         // number of distinct wills actually checked in (#355).
         batch_check_in_limit::assert_no_duplicates(&env, &will_ids);
+        // Validate every will (exists, owned, Active) in a read-only pass
+        // before the first write, so an invalid element anywhere in the batch
+        // rejects the whole batch with nothing applied (#590).
+        batch_atomicity::prevalidate_check_in(&env, &will_ids, &owner);
         let now = env.ledger().timestamp();
         let count = will_ids.len();
 
@@ -3433,6 +3438,12 @@ impl WillContract {
     /// - [`WillError::InvalidTokenCount`] if any individual spec's token list
     ///   is empty or exceeds `MAX_TOKENS`.
     /// - Any error that [`create_will`] would panic with for an individual spec.
+    ///
+    /// # Atomicity
+    /// All-or-nothing: if any spec fails validation or its token transfer,
+    /// the invocation panics and the host discards every will, index entry and
+    /// transfer made earlier in the call, so a bad spec in the middle of the
+    /// batch never leaves earlier wills created (#590).
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn batch_create_wills(
         env: Env,

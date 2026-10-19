@@ -105,3 +105,44 @@ fn one_second_after_boundary_only_release_succeeds() {
     client.release_inheritance(&will_id, &None);
     assert_eq!(client.get_will(&will_id).status, WillStatus::Released);
 }
+
+#[test]
+fn batch_check_in_with_invalid_middle_element_changes_nothing() {
+    let (env, contract_id, owner, token) = setup();
+    let client = WillContractClient::new(&env, &contract_id);
+    let first = create_one(&env, &client, &owner, &token);
+    let last = create_one(&env, &client, &owner, &token);
+    let before_first = client.get_will(&first).last_checkin;
+    let before_last = client.get_will(&last).last_checkin;
+
+    env.ledger().set_timestamp(1_700_000_000 + DAY);
+    let missing: u64 = 9_999;
+    let err = client
+        .try_batch_check_in(&vec![&env, first, missing, last], &owner)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, WillError::WillNotFound.into());
+    assert_eq!(client.get_will(&first).last_checkin, before_first);
+    assert_eq!(client.get_will(&last).last_checkin, before_last);
+}
+
+#[test]
+fn batch_check_in_rejects_non_active_middle_element() {
+    let (env, contract_id, owner, token) = setup();
+    let client = WillContractClient::new(&env, &contract_id);
+    let first = create_one(&env, &client, &owner, &token);
+    let middle = create_one(&env, &client, &owner, &token);
+    let last = create_one(&env, &client, &owner, &token);
+    let t0 = env.ledger().timestamp();
+
+    env.ledger().set_timestamp(t0 + 91 * DAY);
+    client.trigger_will(&middle);
+    let before_first = client.get_will(&first).last_checkin;
+
+    let err = client
+        .try_batch_check_in(&vec![&env, first, middle, last], &owner)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, WillError::WillNotActive.into());
+    assert_eq!(client.get_will(&first).last_checkin, before_first);
+}
