@@ -251,6 +251,8 @@ mod issue_350_353_test;
 mod issue_guardian_vote_underflow_test;
 #[cfg(test)]
 mod issue_620_test;
+#[cfg(test)]
+mod issue_621_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -5526,7 +5528,9 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
 
         // Whatever remains is split among percentage-based beneficiaries,
         // proportionally to their basis points; the final one absorbs the
-        // rounding remainder so no dust is left behind.
+        // rounding remainder so no dust is left behind. Each share rounds down
+        // on its own, so the per-token total is exact: the last percentage
+        // beneficiary takes whatever the earlier shares did not (#621).
         let mut percentage_index: u32 = 0;
         let mut percentage_remaining = remaining;
         for beneficiary in will.beneficiaries.iter() {
