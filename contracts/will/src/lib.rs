@@ -5346,6 +5346,9 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 ///    bounty share rounds above zero; that same token is both reduced to make
 ///    room and used to pay the keeper (#378). If no token's share rounds
 ///    above zero, no bounty is paid and no beneficiary share is reduced.
+///    `keeper_bounty_bps` is a ratio applied to that token's own raw balance,
+///    so the bounty is the same fraction of the balance whatever the token's
+///    decimals. No decimal normalization is needed or applied (#629).
 /// 2. The reserve for hashed beneficiaries that have not yet called
 ///    `reveal_and_claim` (#181/#186). It is withheld from the visible
 ///    beneficiaries and left in `will.balances` for later claiming.
