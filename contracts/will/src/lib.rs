@@ -5542,13 +5542,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         // beneficiary to absorb the leftover (e.g. after a `top_up`). Give it
         // to the final beneficiary instead of leaving it stranded in the
         // contract once the balances map is cleared (#456).
-        if percentage_count == 0 && remaining > 0 && !shares.is_empty() {
-            let last = shares.len() - 1;
-            let (addr, share) = shares.get(last).unwrap();
-            shares.set(last, (addr, share + remaining));
+        // Any dust or leftover remainder after payouts is refunded to the
+        // owner at the end so funds are neither stranded nor distorted.
+        if remaining > 0 {
+            refund_plan.push_back((token_addr.clone(), remaining));
         }
 
-        // Conservation check (#456): the planned payouts for this token must
+        // Conservation check (#456): the planned payouts and refund for this token must
         // account for exactly its balance. Anything else means funds would be
         // silently lost in, or over-drawn from, the contract.
         let mut planned: i128 = token_bounty;
@@ -5561,16 +5561,16 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 None => panic_with_error!(env, WillError::DistributionMismatch),
             };
         }
+        for (t, refund_amt) in refund_plan.iter() {
+            if t == token_addr {
+                planned = match planned.checked_add(refund_amt) {
+                    Some(v) => v,
+                    None => panic_with_error!(env, WillError::DistributionMismatch),
+                };
+            }
+        }
         if planned != total {
             panic_with_error!(env, WillError::DistributionMismatch);
-        }
-
-        // With no percentage beneficiaries there is nobody left to absorb what
-        // the fixed amounts did not claim. Refunding it to the owner keeps the
-        // tokens from being stranded in the contract with no accounting and no
-        // withdrawal path once the will is `Released` (#383).
-        if percentage_count == 0 && remaining > 0 {
-            refund_plan.push_back((token_addr.clone(), remaining));
         }
 
         transfer_plan.push_back((token_addr, shares));
