@@ -4368,6 +4368,9 @@ impl WillContract {
     /// - [`WillError::InvalidPreimage`] if `commitment` is not a 32-byte digest.
     /// - `commitment`: SHA-256 hash of the pre-image `address_bytes || salt_bytes`.
     ///   Must be exactly 32 bytes — see the validation rules below.
+    ///   The contract cannot verify the salt's entropy: use 32 bytes from a
+    ///   cryptographically secure RNG, fresh per commitment (see
+    ///   `docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md`, #589).
     /// - `percentage`: share of the will's balance for this beneficiary, in
     ///   basis points. Must be greater than zero.
     ///

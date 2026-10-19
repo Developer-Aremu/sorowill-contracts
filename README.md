@@ -171,6 +171,7 @@ If you need more than 10 heirs, you can:
 
 ### Release safety
 
+- **Hashed-beneficiary salts.** The contract cannot check a salt's entropy; use 32 bytes from a cryptographically secure RNG per commitment. See [docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md](./docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md).
 - **One payout per will.** A will is distributed at most once: `release_inheritance`, `guardian_trigger` and the internal `distribute` all refuse a will that is no longer `Active`/`Triggered`. `reveal_and_claim` deducts the hashed beneficiary's share from the will's token balance, so a later release cannot pay it again.
 - **Guardian votes are deduplicated.** Vote weight and count are recomputed from per-guardian records on every vote, so each guardian counts at most once and expired votes drop out; re-voting after expiry refreshes the vote instead of adding to it. The same applies to `guardian_cancel_trigger`.
 - **Keeper bounty comes out of the will.** The bounty is deducted from the first token's balance before the beneficiary split rather than paid on top of it.

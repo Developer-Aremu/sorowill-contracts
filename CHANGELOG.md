@@ -88,6 +88,9 @@ gets its own [contract spec artifact](./spec) once exported.
   deadline second as still belonging to the owner (`now > deadline` releases),
   matching `emergency_checkin` and the docs; previously both succeeded at
   exactly the deadline. Shared predicate in `grace_boundary.rs` (#588).
+- Documented salt entropy guidance for hashed-beneficiary commitments (32 bytes
+  of CSPRNG output, example, references) in
+  `docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md` (#589).
 - Guardian release/cancel votes are tallied from per-guardian records, so a
   guardian re-voting after expiry is no longer counted twice (#458).
 - The keeper bounty is deducted from the will's balance instead of being paid
