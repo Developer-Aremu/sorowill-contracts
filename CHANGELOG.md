@@ -60,6 +60,9 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Fixed
 - `renounce_beneficiary` redistribution now caps the percentage total at
   10,000 bps; the last remaining percentage beneficiary absorbs the rounding
+- Keeper bounty rounding is specified (floor, in favour of beneficiaries) and
+  dust handling documented in `bounty_rounding`; `distribute` computes the
+  bounty through it, with boundary-amount tests (#595).
 - Documented (docs/EVENT_ATOMICITY.md) that `guardian_trigger` and
   `distribute` events are discarded with the state when the invocation fails,
   and that `inheritance_released` is published only after every payout was

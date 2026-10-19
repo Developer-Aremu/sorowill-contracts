@@ -203,3 +203,35 @@ fn issue_594_rejected_guardian_trigger_leaves_will_unchanged() {
     assert_eq!(will.guardian_votes, 0);
     assert_eq!(will.balance, 1_000);
 }
+
+// ---------------------------------------------------------------------------
+// #595: keeper bounty rounds down, dust stays with beneficiaries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn issue_595_bounty_rounds_down_at_boundaries() {
+    use crate::bounty_rounding::keeper_bounty;
+    // 199 * 50 / 10_000 = 0.995 -> 0
+    assert_eq!(keeper_bounty(199, 50), 0);
+    // 200 * 50 / 10_000 = 1 exactly
+    assert_eq!(keeper_bounty(200, 50), 1);
+    // 201 * 50 / 10_000 = 1.005 -> 1
+    assert_eq!(keeper_bounty(201, 50), 1);
+    // 399 * 50 / 10_000 = 1.995 -> 1 (never rounds up)
+    assert_eq!(keeper_bounty(399, 50), 1);
+    assert_eq!(keeper_bounty(0, 50), 0);
+    assert_eq!(keeper_bounty(10_000, 10_000), 10_000);
+}
+
+#[test]
+fn issue_595_bounty_never_exceeds_exact_fraction() {
+    use crate::bounty_rounding::keeper_bounty;
+    let mut balance: i128 = 1;
+    while balance < 5_000 {
+        let bounty = keeper_bounty(balance, 333);
+        // bounty <= balance * bps / 10_000 < bounty + 1
+        assert!(bounty * 10_000 <= balance * 333);
+        assert!((bounty + 1) * 10_000 > balance * 333);
+        balance += 7;
+    }
+}

@@ -372,6 +372,7 @@ mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
 mod balance_consistency;
+mod bounty_rounding;
 mod deadline_precision;
 #[cfg(test)]
 mod test_rdj_savyy;
@@ -5440,7 +5441,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
             if total == 0 {
                 continue;
             }
-            let amount = proportional_share(total, will.keeper_bounty_bps);
+            let amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             if amount > 0 {
                 bounty_token = Some((token_addr, amount));
                 break;
@@ -5487,7 +5488,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         let mut token_bounty: i128 = 0;
         if should_pay_bounty && !bounty_computed {
             bounty_computed = true;
-            bounty_amount = proportional_share(total, will.keeper_bounty_bps);
+            bounty_amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             token_bounty = bounty_amount;
         }
 
