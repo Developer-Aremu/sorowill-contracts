@@ -373,6 +373,8 @@ mod update_will_settings_test;
 mod wills_by_owner_status_test;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
+#[cfg(test)]
+mod issue_568_571_test;
 
 use soroban_sdk::{
     contract, contractimpl, log, panic_with_error, symbol_short, token, xdr::ToXdr, Address,
