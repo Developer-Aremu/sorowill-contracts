@@ -2925,6 +2925,10 @@ impl WillContract {
         will.guardian_votes = live_votes;
         storage::save_will(&env, &will);
 
+        // Each vote is recorded as a `guardian_voted` event that names the
+        // guardian, so operator identity is kept for every vote. The audit trail
+        // holds only status transitions, and records the actor of the transition
+        // that a vote causes (#638).
         events::guardian_voted(&env, will_id, &guardian, weight, will.guardian_vote_weight);
 
         if will.guardian_vote_weight >= will.guardian_threshold
