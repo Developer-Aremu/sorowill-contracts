@@ -41,6 +41,11 @@ gets its own [contract spec artifact](./spec) once exported.
   beneficiary (`distribute_limits::min_one_unit_share`); the final percentage
   beneficiary keeps absorbing the rounding remainder, so no dust is stranded
   (#599).
+- `WillError::DistributionTooLarge` (55): `distribute` now checks
+  beneficiaries x tokens against `MAX_RELEASE_PAYOUTS` before computing or
+  moving anything, covering the guardian-quorum release path too; the
+  per-payout resource cost is documented in `docs/DISTRIBUTE_RESOURCES.md`
+  (#597).
 - `WillError::DistributionMismatch` (39): release aborts if planned payouts for
   a token do not sum to exactly its balance (#456).
 - **CONTRACT_VERSION bumped to 1.3.1** (`1_003_001`) for the Valreb001 hardening

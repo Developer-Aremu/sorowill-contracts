@@ -317,6 +317,7 @@ disambiguate.
 | 39 | `DistributionMismatch` | The computed payouts for a token did not sum to exactly the will's balance of that token; the release is aborted instead of losing or over-drawing funds. |
 | 51 | `UnsupportedSchemaVersion` | A stored will matches neither the current `Will` layout nor any known legacy layout. |
 | 52 | `PrimaryTokenMismatch` | Cannot merge: the two wills' primary tokens differ. |
+| 55 | `DistributionTooLarge` | `distribute` was asked to pay out more than `MAX_RELEASE_PAYOUTS` (beneficiaries x tokens) transfers; rejected before any state change. |
 | 54 | `MigrationInvariantViolation` | A schema migration step produced a will that breaks a structural invariant (non-sequential version, `Triggered` without `trigger_time`, vote tally above the guardian list, or list caps / percentage total exceeded). |
 | 40 | `DuplicateToken` | The same token address was supplied more than once in a `tokens` list. |
 | 41 | `BatchTooLarge` | A `batch_check_in` call supplied more than `MAX_BATCH_CHECK_IN` (50) will ids. |

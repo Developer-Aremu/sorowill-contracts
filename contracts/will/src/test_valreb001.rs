@@ -241,3 +241,21 @@ fn distribute_pays_every_small_percentage_beneficiary_at_least_one_unit() {
     assert_eq!(token_client.balance(&b), 1);
     assert_eq!(token_client.balance(&c), 998);
 }
+
+// ---------------------------------------------------------------------------
+// #597: distribute pre-flight payout budget
+// ---------------------------------------------------------------------------
+
+#[test]
+fn payout_budget_accepts_the_maximum_combination() {
+    let env = Env::default();
+    crate::distribute_limits::assert_payout_budget(&env, crate::MAX_BENEFICIARIES, 10);
+    crate::distribute_limits::assert_payout_budget(&env, 0, 10);
+}
+
+#[test]
+#[should_panic]
+fn payout_budget_rejects_more_than_the_maximum_combination() {
+    let env = Env::default();
+    crate::distribute_limits::assert_payout_budget(&env, crate::MAX_BENEFICIARIES, 11);
+}

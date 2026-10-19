@@ -5,6 +5,27 @@
 //! for any beneficiary with a small allocation, so they would receive nothing
 //! while the final percentage beneficiary absorbed their value.
 
+use soroban_sdk::{panic_with_error, Env};
+
+use crate::errors::WillError;
+use crate::MAX_RELEASE_PAYOUTS;
+
+/// Pre-flight check run at the top of `distribute` (#597): rejects a release
+/// whose beneficiary x token payout count exceeds [`MAX_RELEASE_PAYOUTS`]
+/// before any state changes or transfers happen. Every entry point already
+/// enforces the per-list caps, but `distribute` is also reached through the
+/// guardian-quorum path and by wills written under an older layout, so the
+/// bound is asserted here as well. See `docs/DISTRIBUTE_RESOURCES.md`.
+pub(crate) fn assert_payout_budget(env: &Env, beneficiaries: u32, tokens: u32) {
+    let payouts = match beneficiaries.checked_mul(tokens) {
+        Some(n) => n,
+        None => panic_with_error!(env, WillError::DistributionTooLarge),
+    };
+    if payouts > MAX_RELEASE_PAYOUTS {
+        panic_with_error!(env, WillError::DistributionTooLarge);
+    }
+}
+
 /// Returns the share a non-final percentage beneficiary is paid.
 ///
 /// - `floor_share`: `floor(remaining * bps / 10_000)` for this beneficiary.

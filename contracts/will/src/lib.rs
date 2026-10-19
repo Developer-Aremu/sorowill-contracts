@@ -5405,6 +5405,9 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
     let count = will.beneficiaries.len();
     let token_count = will.balances.len();
 
+    // Pre-flight resource bound, before any share is computed (#597).
+    distribute_limits::assert_payout_budget(env, count, token_count);
+
     // --- COMPUTE: calculate every share from the current (pre-mutation) balances ---
     // Calculate keeper bounty if applicable (not paid to owner, only to other keepers)
     let mut bounty_amount: i128 = 0;

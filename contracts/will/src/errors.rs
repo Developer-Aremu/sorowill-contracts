@@ -231,4 +231,9 @@ pub enum WillError {
     /// guardian list, or the list caps / percentage total are exceeded), so
     /// the migrated state is rejected instead of being persisted (#596).
     MigrationInvariantViolation = 54,
+    /// `distribute` was asked to pay out more transfers than the
+    /// `MAX_RELEASE_PAYOUTS` budget (beneficiaries x tokens) allows, so the
+    /// release is rejected up front instead of running out of Soroban
+    /// transaction resources partway through the payout loop (#597).
+    DistributionTooLarge = 55,
 }
