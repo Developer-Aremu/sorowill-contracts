@@ -225,4 +225,7 @@ pub enum WillError {
     /// would wipe those votes and let a fresh trigger bypass a cancel that was
     /// accumulating against it, so the update is refused (#488).
     GuardianCancelInProgress = 53,
+    /// The pre-image's salt is all zero bytes. Such a salt is trivially guessed, so the
+    /// claim is refused before the commitment is checked (#623).
+    WeakPreimageSalt = 55,
 }

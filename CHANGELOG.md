@@ -11,6 +11,7 @@ gets its own [contract spec artifact](./spec) once exported.
 ## [Unreleased]
 
 ### Security
+- `reveal_and_claim` rejects a pre-image whose salt is all zero bytes, with `WeakPreimageSalt` (error 55) (#623).
 - `release_inheritance` re-reads the will from storage and re-validates that
   it is still `Triggered` (with a recorded `trigger_time`) immediately before
   distributing; documented that the atomic invocation locks the will for the
