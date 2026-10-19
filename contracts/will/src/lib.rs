@@ -4650,6 +4650,9 @@ impl WillContract {
         will.hashed_beneficiaries = updated_hb;
         storage::save_will(&env, &will);
 
+        // Soroban runs each invocation as one atomic transaction. If a transfer below
+        // panics, the `claimed` flag written above is rolled back with it, so a failed
+        // payout can never leave the beneficiary marked claimed without the funds (#600).
         // --- INTERACTIONS: external token transfers execute after state is settled ---
         let contract_address = env.current_contract_address();
         for (token_addr, share) in transfer_plan.iter() {
