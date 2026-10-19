@@ -22,7 +22,7 @@
 use soroban_sdk::{Env, TryFromVal, Val};
 
 use crate::errors::WillError;
-use crate::types::Will;
+use crate::types::{Will, WillStatus};
 
 /// Schema version written into every newly created or migrated will.
 ///
@@ -58,12 +58,38 @@ pub fn decode_will(env: &Env, raw: &Val) -> Result<Will, WillError> {
 pub fn upgrade(env: &Env, mut will: Will) -> Will {
     while will.schema_version < CURRENT_SCHEMA_VERSION {
         will = match will.schema_version {
-            0 => migrate_v0_to_v1(env, will),
+            0 => {
+                let upgraded = migrate_v0_to_v1(env, will);
+                validate_status_is_reachable(env, &upgraded);
+                upgraded
+            }
             // Every version below CURRENT_SCHEMA_VERSION must have a step.
             _ => soroban_sdk::panic_with_error!(env, WillError::UnsupportedSchemaVersion),
         };
     }
     will
+}
+
+/// Validates that a will's status is valid and reachable from the previous schema.
+pub fn validate_status_is_reachable(env: &Env, will: &Will) {
+    match will.status {
+        WillStatus::PendingConfirmation => {
+            if will.trigger_time.is_some() {
+                soroban_sdk::panic_with_error!(env, WillError::WillNotActive);
+            }
+        }
+        WillStatus::Active => {
+            if will.trigger_time.is_some() {
+                soroban_sdk::panic_with_error!(env, WillError::WillNotActive);
+            }
+        }
+        WillStatus::Triggered => {
+            if will.trigger_time.is_none() {
+                soroban_sdk::panic_with_error!(env, WillError::WillNotTriggered);
+            }
+        }
+        WillStatus::Released | WillStatus::Cancelled | WillStatus::Settled => {}
+    }
 }
 
 /// v0 → v1: v0 wills predate the `schema_version` field being populated; the
