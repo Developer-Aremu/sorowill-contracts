@@ -84,6 +84,10 @@ gets its own [contract spec artifact](./spec) once exported.
   value, which happened to still pass only because the assertion above it
   (against the `CONTRACT_VERSION` constant itself) never catches the literal
   going stale. Updated it to track the current value (#501).
+- `release_inheritance` and the post-release payout check now treat the grace
+  deadline second as still belonging to the owner (`now > deadline` releases),
+  matching `emergency_checkin` and the docs; previously both succeeded at
+  exactly the deadline. Shared predicate in `grace_boundary.rs` (#588).
 - Guardian release/cancel votes are tallied from per-guardian records, so a
   guardian re-voting after expiry is no longer counted twice (#458).
 - The keeper bounty is deducted from the will's balance instead of being paid

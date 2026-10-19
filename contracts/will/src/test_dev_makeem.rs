@@ -1,0 +1,107 @@
+#![cfg(test)]
+
+//! Regression tests for issues #588-#591.
+
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    token::StellarAssetClient,
+    vec, Address, Env,
+};
+
+use crate::{
+    grace_boundary, Allocation, Beneficiary, WillContract, WillContractClient, WillError,
+    WillStatus,
+};
+
+const DAY: u64 = 86_400;
+
+/// Creates one Active will for `owner` and returns its id.
+fn create_one(env: &Env, client: &WillContractClient, owner: &Address, token: &Address) -> u64 {
+    let beneficiary = Address::generate(env);
+    client.create_will(
+        owner,
+        &vec![env, (token.clone(), 1_000_i128)],
+        &vec![
+            env,
+            Beneficiary {
+                address: beneficiary,
+                allocation: Allocation::Percentage(10_000),
+            },
+        ],
+        &90,
+        &7,
+        &vec![env],
+        &0,
+        &None,
+        &0,
+    )
+}
+
+fn setup() -> (Env, Address, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_700_000_000);
+    let owner = Address::generate(&env);
+    let token = env
+        .register_stellar_asset_contract_v2(owner.clone())
+        .address();
+    StellarAssetClient::new(&env, &token).mint(&owner, &1_000_000_000);
+    let contract_id = env.register(WillContract, ());
+    (env, contract_id, owner, token)
+}
+
+#[test]
+fn grace_predicates_are_exact_complements() {
+    for (now, deadline) in [(9u64, 10u64), (10, 10), (11, 10)] {
+        assert_ne!(
+            grace_boundary::grace_elapsed(now, deadline),
+            grace_boundary::owner_window_open(now, deadline)
+        );
+    }
+    assert!(!grace_boundary::grace_elapsed(10, 10));
+    assert!(grace_boundary::grace_elapsed(11, 10));
+}
+
+#[test]
+fn boundary_second_only_owner_succeeds_and_release_is_rejected() {
+    let (env, contract_id, owner, token) = setup();
+    let client = WillContractClient::new(&env, &contract_id);
+    let t0 = env.ledger().timestamp();
+    let will_id = create_one(&env, &client, &owner, &token);
+
+    env.ledger().set_timestamp(t0 + 91 * DAY);
+    client.trigger_will(&will_id);
+    let deadline = t0 + 91 * DAY + 7 * DAY;
+
+    env.ledger().set_timestamp(deadline);
+    let err = client
+        .try_release_inheritance(&will_id, &None)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, WillError::GracePeriodNotExpired.into());
+    assert_eq!(client.get_will(&will_id).status, WillStatus::Triggered);
+
+    client.emergency_checkin(&will_id, &owner);
+    assert_eq!(client.get_will(&will_id).status, WillStatus::Active);
+}
+
+#[test]
+fn one_second_after_boundary_only_release_succeeds() {
+    let (env, contract_id, owner, token) = setup();
+    let client = WillContractClient::new(&env, &contract_id);
+    let t0 = env.ledger().timestamp();
+    let will_id = create_one(&env, &client, &owner, &token);
+
+    env.ledger().set_timestamp(t0 + 91 * DAY);
+    client.trigger_will(&will_id);
+    let deadline = t0 + 91 * DAY + 7 * DAY;
+
+    env.ledger().set_timestamp(deadline + 1);
+    let err = client
+        .try_emergency_checkin(&will_id, &owner)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, WillError::GracePeriodExpired.into());
+    client.release_inheritance(&will_id, &None);
+    assert_eq!(client.get_will(&will_id).status, WillStatus::Released);
+}

@@ -65,6 +65,9 @@ pub mod fuzz_harness;
 
 #[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
+mod test_dev_makeem;
+mod grace_boundary;
 
 /// Unit tests for the mixed percentage/fixed-amount `Allocation` model.
 #[cfg(test)]
@@ -395,12 +398,12 @@ pub use types::{
 /// so that SDKs and apps can detect version mismatches at runtime via
 /// [`WillContract::get_contract_version`].
 ///
-/// Current value: **1.3.0** → `1_003_000`. 1.1.0 made `get_triggered_wills`
+/// Current value: **1.3.1** → `1_003_001`. 1.1.0 made `get_triggered_wills`
 /// take a `(cursor, limit)` page instead of returning the whole index (#368);
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -540,7 +543,7 @@ soroban_sdk::contractmeta!(
 );
 // Kept in sync with CONTRACT_VERSION's semver-decoded form by
 // issue_272_test.rs; bump both together.
-soroban_sdk::contractmeta!(key = "Version", val = "1.3.0");
+soroban_sdk::contractmeta!(key = "Version", val = "1.3.1");
 soroban_sdk::contractmeta!(
     key = "Homepage",
     val = "https://github.com/SoroWill/sorowill-contracts"
@@ -1313,7 +1316,7 @@ impl WillContract {
         // call below) conditional on the grace period *not yet* having
         // expired, the exact opposite of this function's purpose.
         let now = env.ledger().timestamp();
-        if now < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(now, grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -4536,7 +4539,7 @@ impl WillContract {
             WillError::WillNotReleased,
         );
 
-        if env.ledger().timestamp() < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(env.ledger().timestamp(), grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
