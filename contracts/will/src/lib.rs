@@ -5530,7 +5530,11 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 let share = if percentage_index == percentage_count {
                     percentage_remaining
                 } else {
-                    let portion = proportional_share(remaining, bp);
+                    let mut portion = proportional_share(remaining, bp);
+                    // Round allocation to ensure no beneficiary receives less than 1 unit when funds permit
+                    if portion == 0 && remaining >= percentage_count as i128 && percentage_remaining > (percentage_count - percentage_index) as i128 {
+                        portion = 1;
+                    }
                     percentage_remaining -= portion;
                     portion
                 };
