@@ -3796,6 +3796,9 @@ impl WillContract {
                 let existing = merged_guardians.get_unchecked(i);
                 if existing.address == guardian.address {
                     found = true;
+                    // The weight is the larger of the two entries, never a sum,
+                    // so a guardian listed on both wills cannot push the weight
+                    // past `u32::MAX` during a merge (#627).
                     let merged = Guardian {
                         address: existing.address.clone(),
                         weight: existing.weight.max(guardian.weight),
