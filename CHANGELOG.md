@@ -36,6 +36,11 @@ gets its own [contract spec artifact](./spec) once exported.
   `update_will_settings` now remove every stored guardian vote record (live or
   expired) before replacing the list, so a removed-then-re-added guardian can
   never revive an old vote (#598).
+- `distribute` no longer rounds a non-final percentage beneficiary's share
+  down to zero when the balance can still cover one unit per remaining
+  beneficiary (`distribute_limits::min_one_unit_share`); the final percentage
+  beneficiary keeps absorbing the rounding remainder, so no dust is stranded
+  (#599).
 - `WillError::DistributionMismatch` (39): release aborts if planned payouts for
   a token do not sum to exactly its balance (#456).
 - **CONTRACT_VERSION bumped to 1.3.1** (`1_003_001`) for the Valreb001 hardening

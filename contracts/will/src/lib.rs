@@ -322,6 +322,7 @@ mod issue_278_test;
 mod issue_279_test;
 #[cfg(test)]
 mod issue_280_test;
+mod distribute_limits;
 mod guardian_vote_purge;
 mod migration_rules;
 #[cfg(test)]
@@ -5537,7 +5538,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 let share = if percentage_index == percentage_count {
                     percentage_remaining
                 } else {
-                    let portion = proportional_share(remaining, bp);
+                    // Never round a non-final share below one unit while the
+                    // balance can still cover every later beneficiary (#599).
+                    let portion = distribute_limits::min_one_unit_share(
+                        proportional_share(remaining, bp),
+                        percentage_remaining,
+                        percentage_count - percentage_index,
+                    );
                     percentage_remaining -= portion;
                     portion
                 };
