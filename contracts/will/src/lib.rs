@@ -372,6 +372,7 @@ mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
 mod balance_consistency;
+mod deadline_precision;
 #[cfg(test)]
 mod test_rdj_savyy;
 #[cfg(test)]
@@ -933,7 +934,8 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         if let Some(deadline) = will.confirmation_deadline {
-            if now > deadline {
+            // One ledger interval of slack for coarse ledger timestamps (#593).
+            if deadline_precision::confirmation_expired(now, deadline) {
                 panic_with_error!(&env, WillError::ConfirmationWindowExpired);
             }
         }

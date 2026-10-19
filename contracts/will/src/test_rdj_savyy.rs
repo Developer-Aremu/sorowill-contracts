@@ -127,3 +127,58 @@ fn issue_592_sync_heals_a_stale_mirror() {
     assert!(balance_consistency::is_consistent(&will));
     assert_eq!(will.balance, 700);
 }
+
+// ---------------------------------------------------------------------------
+// #593: confirmation deadline buffer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn issue_593_expiry_helper_boundaries() {
+    use crate::deadline_precision::{confirmation_expired, CONFIRMATION_DEADLINE_BUFFER_SECONDS};
+    let deadline = 1_000_u64;
+    assert!(!confirmation_expired(deadline, deadline));
+    assert!(!confirmation_expired(deadline + CONFIRMATION_DEADLINE_BUFFER_SECONDS, deadline));
+    assert!(confirmation_expired(deadline + CONFIRMATION_DEADLINE_BUFFER_SECONDS + 1, deadline));
+    assert!(!confirmation_expired(u64::MAX, u64::MAX));
+}
+
+fn pending_will<'a>(
+    env: &Env,
+    client: &WillContractClient<'a>,
+    owner: &Address,
+    token: &Address,
+    window: u64,
+) -> u64 {
+    let tokens: SorobanVec<(Address, i128)> = vec![env, (token.clone(), 1_000_i128)];
+    client.create_will(
+        owner,
+        &tokens,
+        &one_beneficiary(env),
+        &90,
+        &7,
+        &vec![env],
+        &0,
+        &None,
+        &window,
+    )
+}
+
+#[test]
+fn issue_593_confirm_succeeds_within_buffer_after_short_window() {
+    let (env, client, owner, token) = setup();
+    // A window near the ledger interval: the owner lands 3 seconds late.
+    let will_id = pending_will(&env, &client, &owner, &token, 5);
+    env.ledger().with_mut(|l| l.timestamp += 5 + 3);
+    client.confirm_will(&will_id, &owner);
+    assert_eq!(client.get_will(&will_id).status, WillStatus::Active);
+}
+
+#[test]
+fn issue_593_confirm_fails_just_past_buffer() {
+    use crate::deadline_precision::CONFIRMATION_DEADLINE_BUFFER_SECONDS;
+    let (env, client, owner, token) = setup();
+    let will_id = pending_will(&env, &client, &owner, &token, 5);
+    env.ledger()
+        .with_mut(|l| l.timestamp += 5 + CONFIRMATION_DEADLINE_BUFFER_SECONDS + 1);
+    assert!(client.try_confirm_will(&will_id, &owner).is_err());
+}

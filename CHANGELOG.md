@@ -60,6 +60,10 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Fixed
 - `renounce_beneficiary` redistribution now caps the percentage total at
   10,000 bps; the last remaining percentage beneficiary absorbs the rounding
+- `confirm_will` allows one ledger interval (5 s, `deadline_precision`) of slack
+  past `confirmation_deadline`, so coarse ledger timestamps no longer make an
+  owner miss the window by a second or two; the minimum practical window is
+  documented (#593).
 - `top_up` and `emergency_checkin` keep the legacy `balance` mirror equal to
   `balances[primary_token]` through the new `balance_consistency` helpers, so
   a stale mirror can no longer feed FixedAmount over-commitment (#592).
