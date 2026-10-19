@@ -11,6 +11,7 @@ gets its own [contract spec artifact](./spec) once exported.
 ## [Unreleased]
 
 ### Security
+- `merge_wills` rejects a merge whose combined token set exceeds `MAX_TOKENS`, with `MergeWouldExceedLimits`, so a merged will keeps the same token cap `create_will` enforces (#637).
 - `release_inheritance` re-reads the will from storage and re-validates that
   it is still `Triggered` (with a recorded `trigger_time`) immediately before
   distributing; documented that the atomic invocation locks the will for the

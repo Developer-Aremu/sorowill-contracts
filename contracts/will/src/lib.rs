@@ -400,7 +400,7 @@ pub use types::{
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -3834,6 +3834,11 @@ impl WillContract {
         for (token_addr, amount) in will_b.balances.iter() {
             let prev = combined_balances.get(token_addr.clone()).unwrap_or(0);
             combined_balances.set(token_addr, prev + amount);
+        }
+        // The merged will holds the union of both token sets, so it must respect
+        // the same token cap that `create_will` enforces (#637).
+        if combined_balances.len() > MAX_TOKENS {
+            panic_with_error!(&env, WillError::MergeWouldExceedLimits);
         }
 
         // Clear persistent GuardianVote/GuardianCancelVote entries for both
