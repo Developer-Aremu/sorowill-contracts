@@ -253,6 +253,8 @@ mod issue_guardian_vote_underflow_test;
 mod issue_623_test;
 #[cfg(test)]
 mod issue_624_test;
+#[cfg(test)]
+mod issue_625_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -2279,6 +2281,9 @@ impl WillContract {
         if token == will.token {
             will.balance = new_balance;
         }
+        // Re-check the allocations against the final primary balance before the state
+        // is saved, so no top-up can leave the fixed amounts above what the will holds (#625).
+        assert_valid_allocations(&env, &will.beneficiaries, will.balance);
         storage::save_will(&env, &will);
 
         // Increment locked value for this token
