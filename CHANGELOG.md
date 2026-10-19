@@ -96,6 +96,9 @@ gets its own [contract spec artifact](./spec) once exported.
   helper (#457).
 - Fixed-amount-only wills pay any leftover balance to the final beneficiary
   instead of stranding it in the contract (#456).
+- `release_inheritance` holds a per-will release lock for its whole run; a
+  concurrent or re-entrant call fails with the new
+  `WillError::ReleaseInProgress` (80) (#586).
 - `get_wills_by_owner_and_status` filters by status before cutting the page, so
   short pages no longer hide matching wills (#455).
 ### Fixed

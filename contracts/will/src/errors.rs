@@ -225,4 +225,8 @@ pub enum WillError {
     /// would wipe those votes and let a fresh trigger bypass a cancel that was
     /// accumulating against it, so the update is refused (#488).
     GuardianCancelInProgress = 53,
+    /// `release_inheritance` was called for a will whose release is already in
+    /// progress (the per-will release lock is held), e.g. by a re-entrant call
+    /// from a token contract invoked mid-distribution (#586).
+    ReleaseInProgress = 80,
 }

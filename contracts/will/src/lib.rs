@@ -51,6 +51,7 @@ mod migration;
 mod guardian_vote_freshness;
 mod split_uniqueness_check;
 mod storage;
+mod release_lock;
 mod types;
 
 /// Reusable harness that drives entry points with arbitrary input and asserts
@@ -78,6 +79,9 @@ mod allocation_test;
 /// used when the will is later triggered and released.
 #[cfg(test)]
 mod beneficiary_lifecycle_test;
+
+#[cfg(test)]
+mod test_freezyyy_arch;
 
 /// Cursor- and limit-based pagination regression tests for owner and
 /// beneficiary lookups.
@@ -395,12 +399,12 @@ pub use types::{
 /// so that SDKs and apps can detect version mismatches at runtime via
 /// [`WillContract::get_contract_version`].
 ///
-/// Current value: **1.3.0** → `1_003_000`. 1.1.0 made `get_triggered_wills`
+/// Current value: **1.3.1** → `1_003_001`. 1.1.0 made `get_triggered_wills`
 /// take a `(cursor, limit)` page instead of returning the whole index (#368);
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -540,7 +544,7 @@ soroban_sdk::contractmeta!(
 );
 // Kept in sync with CONTRACT_VERSION's semver-decoded form by
 // issue_272_test.rs; bump both together.
-soroban_sdk::contractmeta!(key = "Version", val = "1.3.0");
+soroban_sdk::contractmeta!(key = "Version", val = "1.3.1");
 soroban_sdk::contractmeta!(
     key = "Homepage",
     val = "https://github.com/SoroWill/sorowill-contracts"
@@ -1287,6 +1291,7 @@ impl WillContract {
     /// // Each beneficiary's token balance reflects their basis-point share.
     /// ```
     pub fn release_inheritance(env: Env, will_id: u64, caller: Option<Address>) {
+        release_lock::acquire(&env, will_id);
         let mut will = load_will(&env, will_id);
         assert_status(
             &env,
@@ -1347,6 +1352,7 @@ impl WillContract {
         assert_release_preconditions(&env, will_id, &will);
 
         distribute(&env, &mut will, &caller);
+        release_lock::release(&env, will_id);
     }
 
     /// Delivers a payout that failed during a previous `distribute` call
