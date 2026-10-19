@@ -452,6 +452,9 @@ const MAX_TOKENS: u32 = 10;
 /// payouts, plus at most one keeper bounty and one owner refund per token.
 /// Distribution therefore needs no pagination: the work is bounded by
 /// construction rather than by the caller.
+// Payout order does not change this bound: a release makes at most this many
+// transfers whichever beneficiary comes first, so list order cannot raise the
+// gas cost of a release past it (#635).
 pub const MAX_RELEASE_PAYOUTS: u32 = MAX_BENEFICIARIES * MAX_TOKENS;
 
 /// Exact byte length of a hashed beneficiary's pre-image: a 32-byte address
