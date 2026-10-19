@@ -60,6 +60,9 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Fixed
 - `renounce_beneficiary` redistribution now caps the percentage total at
   10,000 bps; the last remaining percentage beneficiary absorbs the rounding
+- `top_up` and `emergency_checkin` keep the legacy `balance` mirror equal to
+  `balances[primary_token]` through the new `balance_consistency` helpers, so
+  a stale mirror can no longer feed FixedAmount over-commitment (#592).
   remainder as a non-negative top-up, using checked arithmetic (#486).
 - The `renounce` event now carries `trigger_time: Option<u64>` so a
   renunciation during a grace period can be tied to its trigger cycle.

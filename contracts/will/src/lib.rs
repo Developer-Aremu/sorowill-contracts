@@ -371,6 +371,9 @@ mod issue_490_493_test;
 mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
+mod balance_consistency;
+#[cfg(test)]
+mod test_rdj_savyy;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 
@@ -395,12 +398,12 @@ pub use types::{
 /// so that SDKs and apps can detect version mismatches at runtime via
 /// [`WillContract::get_contract_version`].
 ///
-/// Current value: **1.3.0** → `1_003_000`. 1.1.0 made `get_triggered_wills`
+/// Current value: **1.3.1** → `1_003_001`. 1.1.0 made `get_triggered_wills`
 /// take a `(cursor, limit)` page instead of returning the whole index (#368);
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -540,7 +543,7 @@ soroban_sdk::contractmeta!(
 );
 // Kept in sync with CONTRACT_VERSION's semver-decoded form by
 // issue_272_test.rs; bump both together.
-soroban_sdk::contractmeta!(key = "Version", val = "1.3.0");
+soroban_sdk::contractmeta!(key = "Version", val = "1.3.1");
 soroban_sdk::contractmeta!(
     key = "Homepage",
     val = "https://github.com/SoroWill/sorowill-contracts"
@@ -1199,6 +1202,8 @@ impl WillContract {
         will.guardian_votes = 0;
         will.guardian_cancel_vote_weight = 0;
         will.guardian_cancel_votes = 0;
+        // Never persist a will whose legacy mirror disagrees with the map (#592).
+        balance_consistency::sync_primary_balance(&mut will);
         storage::save_will(&env, &will);
 
         storage::unindex_triggered_will(&env, will_id);
@@ -2261,15 +2266,15 @@ impl WillContract {
         let new_balance = prev + amount;
 
         // --- EFFECTS: update state and persist before the external transfer ---
-        will.balances.set(token.clone(), new_balance);
         // `will.balance` is a legacy mirror of `will.balances[will.token]` kept
         // for backward compatibility until callers migrate fully to the
         // multi-token map; it must be kept in sync here or every reader that
         // still trusts it (e.g. split_will's balance check, reveal_and_claim's
         // share computation) will silently operate on a stale figure.
-        if token == will.token {
-            will.balance = new_balance;
-        }
+        // `record_balance` updates both in one step and re-derives the mirror
+        // from the map, so a top-up of a secondary token also heals a stale
+        // mirror (#592).
+        balance_consistency::record_balance(&mut will, &token, new_balance);
         storage::save_will(&env, &will);
 
         // Increment locked value for this token
