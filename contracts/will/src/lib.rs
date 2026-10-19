@@ -251,6 +251,8 @@ mod issue_350_353_test;
 mod issue_guardian_vote_underflow_test;
 #[cfg(test)]
 mod issue_623_test;
+#[cfg(test)]
+mod issue_624_test;
 
 /// Regression tests for issue #372: expired guardian votes are dropped from the
 /// `guardian_vote_weight` / `guardian_votes` tallies in both
@@ -991,6 +993,11 @@ impl WillContract {
     /// // The countdown resets; the will is still Active.
     /// assert_eq!(client.get_will(&will_id).status, WillStatus::Active);
     /// ```
+    /// Records an owner check-in and restarts the check-in countdown.
+    ///
+    /// Timestamps have one-second granularity. Two check-ins in the same second
+    /// store the same `last_checkin`, so the countdown lands on the same deadline
+    /// whichever one ran first. The outcome does not depend on their order (#624).
     pub fn check_in(env: Env, will_id: u64, caller: Address) {
         caller.require_auth();
         let mut will = load_will(&env, will_id);
