@@ -4675,7 +4675,21 @@ impl WillContract {
             updated_balances.set(token_addr, total - share);
         }
 
-        // --- EFFECTS: mutate and persist all state before any external call ---
+        // --- INTERACTIONS: external token transfers execute before state is marked claimed ---
+        // Transfer tokens before marking claimed so that token-transfer failures do not
+        // leave the hashed beneficiary slot permanently marked as claimed.
+        let contract_address = env.current_contract_address();
+        for (token_addr, share) in transfer_plan.iter() {
+            if share > 0 {
+                token::Client::new(&env, &token_addr).transfer(
+                    &contract_address,
+                    &claimant,
+                    &share,
+                );
+            }
+        }
+
+        // --- EFFECTS: mutate and persist all state after successful transfers ---
         will.balances = updated_balances;
         // `will.balance` mirrors `will.balances[will.token]` for backward
         // compatibility; keep it in sync so other readers of the legacy field
@@ -4697,18 +4711,6 @@ impl WillContract {
         }
         will.hashed_beneficiaries = updated_hb;
         storage::save_will(&env, &will);
-
-        // --- INTERACTIONS: external token transfers execute after state is settled ---
-        let contract_address = env.current_contract_address();
-        for (token_addr, share) in transfer_plan.iter() {
-            if share > 0 {
-                token::Client::new(&env, &token_addr).transfer(
-                    &contract_address,
-                    &claimant,
-                    &share,
-                );
-            }
-        }
 
         events::hashed_claimed(&env, will_id, &claimant, primary_share);
     }
