@@ -65,6 +65,10 @@ pub mod fuzz_harness;
 
 #[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
+mod test_dev_makeem;
+mod grace_boundary;
+mod batch_atomicity;
 
 /// Unit tests for the mixed percentage/fixed-amount `Allocation` model.
 #[cfg(test)]
@@ -1071,6 +1075,10 @@ impl WillContract {
         // partially applied and the `batch_checkin` count always matches the
         // number of distinct wills actually checked in (#355).
         batch_check_in_limit::assert_no_duplicates(&env, &will_ids);
+        // Validate every will (exists, owned, Active) in a read-only pass
+        // before the first write, so an invalid element anywhere in the batch
+        // rejects the whole batch with nothing applied (#590).
+        batch_atomicity::prevalidate_check_in(&env, &will_ids, &owner);
         let now = env.ledger().timestamp();
         let count = will_ids.len();
 
@@ -1326,7 +1334,7 @@ impl WillContract {
         // call below) conditional on the grace period *not yet* having
         // expired, the exact opposite of this function's purpose.
         let now = env.ledger().timestamp();
-        if now < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(now, grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -2546,6 +2554,12 @@ impl WillContract {
     ///
     /// For totals across all pages (will count, locked value per token) call
     /// [`Self::get_owner_stats`] instead of iterating every page.
+    ///
+    /// # Consistency
+    /// The cursor is an id bound ("ids greater than `cursor`"), not a
+    /// position, so wills added or removed between pages never cause an
+    /// entry to be skipped or repeated; new wills appear on later pages.
+    /// Pages are not a snapshot. See `docs/PAGINATION_CONSISTENCY.md` (#591).
     pub fn get_wills_by_owner(
         env: Env,
         owner: Address,
@@ -3449,6 +3463,12 @@ impl WillContract {
     /// - [`WillError::InvalidTokenCount`] if any individual spec's token list
     ///   is empty or exceeds `MAX_TOKENS`.
     /// - Any error that [`create_will`] would panic with for an individual spec.
+    ///
+    /// # Atomicity
+    /// All-or-nothing: if any spec fails validation or its token transfer,
+    /// the invocation panics and the host discards every will, index entry and
+    /// transfer made earlier in the call, so a bad spec in the middle of the
+    /// batch never leaves earlier wills created (#590).
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn batch_create_wills(
         env: Env,
@@ -4384,6 +4404,9 @@ impl WillContract {
     /// - [`WillError::InvalidPreimage`] if `commitment` is not a 32-byte digest.
     /// - `commitment`: SHA-256 hash of the pre-image `address_bytes || salt_bytes`.
     ///   Must be exactly 32 bytes — see the validation rules below.
+    ///   The contract cannot verify the salt's entropy: use 32 bytes from a
+    ///   cryptographically secure RNG, fresh per commitment (see
+    ///   `docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md`, #589).
     /// - `percentage`: share of the will's balance for this beneficiary, in
     ///   basis points. Must be greater than zero.
     ///
@@ -4555,7 +4578,7 @@ impl WillContract {
             WillError::WillNotReleased,
         );
 
-        if env.ledger().timestamp() < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(env.ledger().timestamp(), grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
