@@ -22,7 +22,7 @@
 use soroban_sdk::{Env, TryFromVal, Val};
 
 use crate::errors::WillError;
-use crate::types::Will;
+use crate::types::{Will, WillStatus};
 
 /// Schema version written into every newly created or migrated will.
 ///
