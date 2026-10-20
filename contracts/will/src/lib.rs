@@ -322,6 +322,11 @@ mod issue_278_test;
 mod issue_279_test;
 #[cfg(test)]
 mod issue_280_test;
+mod distribute_limits;
+mod guardian_vote_purge;
+mod migration_rules;
+#[cfg(test)]
+mod test_valreb001;
 #[cfg(test)]
 mod issue_281_test;
 #[cfg(test)]
@@ -395,12 +400,12 @@ pub use types::{
 /// so that SDKs and apps can detect version mismatches at runtime via
 /// [`WillContract::get_contract_version`].
 ///
-/// Current value: **1.3.0** → `1_003_000`. 1.1.0 made `get_triggered_wills`
+/// Current value: **1.3.1** → `1_003_001`. 1.1.0 made `get_triggered_wills`
 /// take a `(cursor, limit)` page instead of returning the whole index (#368);
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -540,7 +545,7 @@ soroban_sdk::contractmeta!(
 );
 // Kept in sync with CONTRACT_VERSION's semver-decoded form by
 // issue_272_test.rs; bump both together.
-soroban_sdk::contractmeta!(key = "Version", val = "1.3.0");
+soroban_sdk::contractmeta!(key = "Version", val = "1.3.1");
 soroban_sdk::contractmeta!(
     key = "Homepage",
     val = "https://github.com/SoroWill/sorowill-contracts"
@@ -1865,6 +1870,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for addr in guardians.iter() {
@@ -1967,6 +1973,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for g in guardians.iter() {
@@ -2155,6 +2162,7 @@ impl WillContract {
 
             let now = env.ledger().timestamp();
             storage::reset_guardian_votes(&env, &will);
+            guardian_vote_purge::purge_guardian_vote_records(&env, &will);
             storage::reset_guardian_cancel_votes(&env, &will);
             let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
             for addr in new_guardians.iter() {
@@ -5397,6 +5405,9 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
     let count = will.beneficiaries.len();
     let token_count = will.balances.len();
 
+    // Pre-flight resource bound, before any share is computed (#597).
+    distribute_limits::assert_payout_budget(env, count, token_count);
+
     // --- COMPUTE: calculate every share from the current (pre-mutation) balances ---
     // Calculate keeper bounty if applicable (not paid to owner, only to other keepers)
     let mut bounty_amount: i128 = 0;
@@ -5530,7 +5541,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 let share = if percentage_index == percentage_count {
                     percentage_remaining
                 } else {
-                    let portion = proportional_share(remaining, bp);
+                    // Never round a non-final share below one unit while the
+                    // balance can still cover every later beneficiary (#599).
+                    let portion = distribute_limits::min_one_unit_share(
+                        proportional_share(remaining, bp),
+                        percentage_remaining,
+                        percentage_count - percentage_index,
+                    );
                     percentage_remaining -= portion;
                     portion
                 };

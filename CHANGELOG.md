@@ -28,8 +28,28 @@ gets its own [contract spec artifact](./spec) once exported.
 ### Added
 - `get_wills_by_owner_and_status_page`, returning a `WillPage` with the page's
   wills, the `total_count` of all matches and an explicit `next_cursor` (#455).
+- `WillError::MigrationInvariantViolation` (54): `migration::upgrade` now
+  validates the will after every migration step (version advances by exactly
+  one, `Triggered` wills keep a `trigger_time`, vote tallies fit the guardian
+  list, list caps and percentage totals hold) via `migration_rules.rs` (#596).
+- `update_guardians`, `update_guardians_weighted` and the guardian branch of
+  `update_will_settings` now remove every stored guardian vote record (live or
+  expired) before replacing the list, so a removed-then-re-added guardian can
+  never revive an old vote (#598).
+- `distribute` no longer rounds a non-final percentage beneficiary's share
+  down to zero when the balance can still cover one unit per remaining
+  beneficiary (`distribute_limits::min_one_unit_share`); the final percentage
+  beneficiary keeps absorbing the rounding remainder, so no dust is stranded
+  (#599).
+- `WillError::DistributionTooLarge` (55): `distribute` now checks
+  beneficiaries x tokens against `MAX_RELEASE_PAYOUTS` before computing or
+  moving anything, covering the guardian-quorum release path too; the
+  per-payout resource cost is documented in `docs/DISTRIBUTE_RESOURCES.md`
+  (#597).
 - `WillError::DistributionMismatch` (39): release aborts if planned payouts for
   a token do not sum to exactly its balance (#456).
+- **CONTRACT_VERSION bumped to 1.3.1** (`1_003_001`) for the Valreb001 hardening
+  fixes (#596-#599).
 - **CONTRACT_VERSION bumped to 1.3.0** (`1_003_000`) for the `seq` field and
   check-in audit-trail entries described under #500 below.
 - `ProtocolStatsAudit`, the type `audit_protocol_stats` returns, was referenced
