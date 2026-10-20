@@ -51,6 +51,7 @@ mod migration;
 mod guardian_vote_freshness;
 mod split_uniqueness_check;
 mod storage;
+mod release_lock;
 mod types;
 
 /// Reusable harness that drives entry points with arbitrary input and asserts
@@ -82,6 +83,9 @@ mod allocation_test;
 /// used when the will is later triggered and released.
 #[cfg(test)]
 mod beneficiary_lifecycle_test;
+
+#[cfg(test)]
+mod test_freezyyy_arch;
 
 /// Cursor- and limit-based pagination regression tests for owner and
 /// beneficiary lookups.
@@ -1308,6 +1312,7 @@ impl WillContract {
     /// // Each beneficiary's token balance reflects their basis-point share.
     /// ```
     pub fn release_inheritance(env: Env, will_id: u64, caller: Option<Address>) {
+        release_lock::acquire(&env, will_id);
         let mut will = load_will(&env, will_id);
         assert_status(
             &env,
@@ -1368,6 +1373,7 @@ impl WillContract {
         assert_release_preconditions(&env, will_id, &will);
 
         distribute(&env, &mut will, &caller);
+        release_lock::release(&env, will_id);
     }
 
     /// Delivers a payout that failed during a previous `distribute` call
