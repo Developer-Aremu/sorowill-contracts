@@ -376,6 +376,11 @@ mod issue_490_493_test;
 mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
+mod balance_consistency;
+mod bounty_rounding;
+mod deadline_precision;
+#[cfg(test)]
+mod test_rdj_savyy;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 
@@ -935,7 +940,8 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         if let Some(deadline) = will.confirmation_deadline {
-            if now > deadline {
+            // One ledger interval of slack for coarse ledger timestamps (#593).
+            if deadline_precision::confirmation_expired(now, deadline) {
                 panic_with_error!(&env, WillError::ConfirmationWindowExpired);
             }
         }
@@ -1204,6 +1210,8 @@ impl WillContract {
         will.guardian_votes = 0;
         will.guardian_cancel_vote_weight = 0;
         will.guardian_cancel_votes = 0;
+        // Never persist a will whose legacy mirror disagrees with the map (#592).
+        balance_consistency::sync_primary_balance(&mut will);
         storage::save_will(&env, &will);
 
         storage::unindex_triggered_will(&env, will_id);
@@ -2269,15 +2277,15 @@ impl WillContract {
         let new_balance = prev + amount;
 
         // --- EFFECTS: update state and persist before the external transfer ---
-        will.balances.set(token.clone(), new_balance);
         // `will.balance` is a legacy mirror of `will.balances[will.token]` kept
         // for backward compatibility until callers migrate fully to the
         // multi-token map; it must be kept in sync here or every reader that
         // still trusts it (e.g. split_will's balance check, reveal_and_claim's
         // share computation) will silently operate on a stale figure.
-        if token == will.token {
-            will.balance = new_balance;
-        }
+        // `record_balance` updates both in one step and re-derives the mirror
+        // from the map, so a top-up of a secondary token also heals a stale
+        // mirror (#592).
+        balance_consistency::record_balance(&mut will, &token, new_balance);
         storage::save_will(&env, &will);
 
         // Increment locked value for this token
@@ -2927,6 +2935,9 @@ impl WillContract {
         will.guardian_votes = live_votes;
         storage::save_will(&env, &will);
 
+        // Events are part of this invocation: if the release below fails, the
+        // host discards this event along with the state (see
+        // docs/EVENT_ATOMICITY.md, #594).
         events::guardian_voted(&env, will_id, &guardian, weight, will.guardian_vote_weight);
 
         if will.guardian_vote_weight >= will.guardian_threshold
@@ -5441,7 +5452,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
             if total == 0 {
                 continue;
             }
-            let amount = proportional_share(total, will.keeper_bounty_bps);
+            let amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             if amount > 0 {
                 bounty_token = Some((token_addr, amount));
                 break;
@@ -5488,7 +5499,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         let mut token_bounty: i128 = 0;
         if should_pay_bounty && !bounty_computed {
             bounty_computed = true;
-            bounty_amount = proportional_share(total, will.keeper_bounty_bps);
+            bounty_amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             token_bounty = bounty_amount;
         }
 
