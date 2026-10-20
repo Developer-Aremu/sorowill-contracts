@@ -393,6 +393,8 @@ mod test_rdj_savyy;
 mod issue_531_534_test;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
+#[cfg(test)]
+mod issue_572_575_test;
 
 use soroban_sdk::{
     contract, contractimpl, log, panic_with_error, symbol_short, token, xdr::ToXdr, Address,
