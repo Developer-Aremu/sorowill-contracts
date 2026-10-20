@@ -66,6 +66,10 @@ pub mod fuzz_harness;
 
 #[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
+mod test_dev_makeem;
+mod grace_boundary;
+mod batch_atomicity;
 
 /// Unit tests for the mixed percentage/fixed-amount `Allocation` model.
 #[cfg(test)]
@@ -326,6 +330,11 @@ mod issue_278_test;
 mod issue_279_test;
 #[cfg(test)]
 mod issue_280_test;
+mod distribute_limits;
+mod guardian_vote_purge;
+mod migration_rules;
+#[cfg(test)]
+mod test_valreb001;
 #[cfg(test)]
 mod issue_281_test;
 #[cfg(test)]
@@ -375,6 +384,11 @@ mod issue_490_493_test;
 mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
+mod balance_consistency;
+mod bounty_rounding;
+mod deadline_precision;
+#[cfg(test)]
+mod test_rdj_savyy;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 
@@ -934,7 +948,8 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         if let Some(deadline) = will.confirmation_deadline {
-            if now > deadline {
+            // One ledger interval of slack for coarse ledger timestamps (#593).
+            if deadline_precision::confirmation_expired(now, deadline) {
                 panic_with_error!(&env, WillError::ConfirmationWindowExpired);
             }
         }
@@ -1064,6 +1079,10 @@ impl WillContract {
         // partially applied and the `batch_checkin` count always matches the
         // number of distinct wills actually checked in (#355).
         batch_check_in_limit::assert_no_duplicates(&env, &will_ids);
+        // Validate every will (exists, owned, Active) in a read-only pass
+        // before the first write, so an invalid element anywhere in the batch
+        // rejects the whole batch with nothing applied (#590).
+        batch_atomicity::prevalidate_check_in(&env, &will_ids, &owner);
         let now = env.ledger().timestamp();
         let count = will_ids.len();
 
@@ -1203,6 +1222,8 @@ impl WillContract {
         will.guardian_votes = 0;
         will.guardian_cancel_vote_weight = 0;
         will.guardian_cancel_votes = 0;
+        // Never persist a will whose legacy mirror disagrees with the map (#592).
+        balance_consistency::sync_primary_balance(&mut will);
         storage::save_will(&env, &will);
 
         storage::unindex_triggered_will(&env, will_id);
@@ -1318,7 +1339,7 @@ impl WillContract {
         // call below) conditional on the grace period *not yet* having
         // expired, the exact opposite of this function's purpose.
         let now = env.ledger().timestamp();
-        if now < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(now, grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -1871,6 +1892,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for addr in guardians.iter() {
@@ -1973,6 +1995,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for g in guardians.iter() {
@@ -2161,6 +2184,7 @@ impl WillContract {
 
             let now = env.ledger().timestamp();
             storage::reset_guardian_votes(&env, &will);
+            guardian_vote_purge::purge_guardian_vote_records(&env, &will);
             storage::reset_guardian_cancel_votes(&env, &will);
             let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
             for addr in new_guardians.iter() {
@@ -2267,15 +2291,15 @@ impl WillContract {
         let new_balance = prev + amount;
 
         // --- EFFECTS: update state and persist before the external transfer ---
-        will.balances.set(token.clone(), new_balance);
         // `will.balance` is a legacy mirror of `will.balances[will.token]` kept
         // for backward compatibility until callers migrate fully to the
         // multi-token map; it must be kept in sync here or every reader that
         // still trusts it (e.g. split_will's balance check, reveal_and_claim's
         // share computation) will silently operate on a stale figure.
-        if token == will.token {
-            will.balance = new_balance;
-        }
+        // `record_balance` updates both in one step and re-derives the mirror
+        // from the map, so a top-up of a secondary token also heals a stale
+        // mirror (#592).
+        balance_consistency::record_balance(&mut will, &token, new_balance);
         storage::save_will(&env, &will);
 
         // Increment locked value for this token
@@ -2536,6 +2560,12 @@ impl WillContract {
     ///
     /// For totals across all pages (will count, locked value per token) call
     /// [`Self::get_owner_stats`] instead of iterating every page.
+    ///
+    /// # Consistency
+    /// The cursor is an id bound ("ids greater than `cursor`"), not a
+    /// position, so wills added or removed between pages never cause an
+    /// entry to be skipped or repeated; new wills appear on later pages.
+    /// Pages are not a snapshot. See `docs/PAGINATION_CONSISTENCY.md` (#591).
     pub fn get_wills_by_owner(
         env: Env,
         owner: Address,
@@ -2925,6 +2955,9 @@ impl WillContract {
         will.guardian_votes = live_votes;
         storage::save_will(&env, &will);
 
+        // Events are part of this invocation: if the release below fails, the
+        // host discards this event along with the state (see
+        // docs/EVENT_ATOMICITY.md, #594).
         events::guardian_voted(&env, will_id, &guardian, weight, will.guardian_vote_weight);
 
         if will.guardian_vote_weight >= will.guardian_threshold
@@ -3436,6 +3469,12 @@ impl WillContract {
     /// - [`WillError::InvalidTokenCount`] if any individual spec's token list
     ///   is empty or exceeds `MAX_TOKENS`.
     /// - Any error that [`create_will`] would panic with for an individual spec.
+    ///
+    /// # Atomicity
+    /// All-or-nothing: if any spec fails validation or its token transfer,
+    /// the invocation panics and the host discards every will, index entry and
+    /// transfer made earlier in the call, so a bad spec in the middle of the
+    /// batch never leaves earlier wills created (#590).
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn batch_create_wills(
         env: Env,
@@ -4371,6 +4410,9 @@ impl WillContract {
     /// - [`WillError::InvalidPreimage`] if `commitment` is not a 32-byte digest.
     /// - `commitment`: SHA-256 hash of the pre-image `address_bytes || salt_bytes`.
     ///   Must be exactly 32 bytes — see the validation rules below.
+    ///   The contract cannot verify the salt's entropy: use 32 bytes from a
+    ///   cryptographically secure RNG, fresh per commitment (see
+    ///   `docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md`, #589).
     /// - `percentage`: share of the will's balance for this beneficiary, in
     ///   basis points. Must be greater than zero.
     ///
@@ -4542,7 +4584,7 @@ impl WillContract {
             WillError::WillNotReleased,
         );
 
-        if env.ledger().timestamp() < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(env.ledger().timestamp(), grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -5403,6 +5445,9 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
     let count = will.beneficiaries.len();
     let token_count = will.balances.len();
 
+    // Pre-flight resource bound, before any share is computed (#597).
+    distribute_limits::assert_payout_budget(env, count, token_count);
+
     // --- COMPUTE: calculate every share from the current (pre-mutation) balances ---
     // Calculate keeper bounty if applicable (not paid to owner, only to other keepers)
     let mut bounty_amount: i128 = 0;
@@ -5436,7 +5481,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
             if total == 0 {
                 continue;
             }
-            let amount = proportional_share(total, will.keeper_bounty_bps);
+            let amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             if amount > 0 {
                 bounty_token = Some((token_addr, amount));
                 break;
@@ -5483,7 +5528,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         let mut token_bounty: i128 = 0;
         if should_pay_bounty && !bounty_computed {
             bounty_computed = true;
-            bounty_amount = proportional_share(total, will.keeper_bounty_bps);
+            bounty_amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             token_bounty = bounty_amount;
         }
 
@@ -5536,7 +5581,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 let share = if percentage_index == percentage_count {
                     percentage_remaining
                 } else {
-                    let portion = proportional_share(remaining, bp);
+                    // Never round a non-final share below one unit while the
+                    // balance can still cover every later beneficiary (#599).
+                    let portion = distribute_limits::min_one_unit_share(
+                        proportional_share(remaining, bp),
+                        percentage_remaining,
+                        percentage_count - percentage_index,
+                    );
                     percentage_remaining -= portion;
                     portion
                 };

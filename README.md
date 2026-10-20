@@ -171,6 +171,7 @@ If you need more than 10 heirs, you can:
 
 ### Release safety
 
+- **Hashed-beneficiary salts.** The contract cannot check a salt's entropy; use 32 bytes from a cryptographically secure RNG per commitment. See [docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md](./docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md).
 - **One payout per will.** A will is distributed at most once: `release_inheritance`, `guardian_trigger` and the internal `distribute` all refuse a will that is no longer `Active`/`Triggered`. `reveal_and_claim` deducts the hashed beneficiary's share from the will's token balance, so a later release cannot pay it again.
 - **Guardian votes are deduplicated.** Vote weight and count are recomputed from per-guardian records on every vote, so each guardian counts at most once and expired votes drop out; re-voting after expiry refreshes the vote instead of adding to it. The same applies to `guardian_cancel_trigger`.
 - **Keeper bounty comes out of the will.** The bounty is deducted from the first token's balance before the beneficiary split rather than paid on top of it.
@@ -317,7 +318,8 @@ disambiguate.
 | 39 | `DistributionMismatch` | The computed payouts for a token did not sum to exactly the will's balance of that token; the release is aborted instead of losing or over-drawing funds. |
 | 51 | `UnsupportedSchemaVersion` | A stored will matches neither the current `Will` layout nor any known legacy layout. |
 | 52 | `PrimaryTokenMismatch` | Cannot merge: the two wills' primary tokens differ. |
-| 80 | `ReleaseInProgress` | `release_inheritance` was called while a release of the same will is already in progress (release lock held). |
+| 55 | `DistributionTooLarge` | `distribute` was asked to pay out more than `MAX_RELEASE_PAYOUTS` (beneficiaries x tokens) transfers; rejected before any state change. |
+| 54 | `MigrationInvariantViolation` | A schema migration step produced a will that breaks a structural invariant (non-sequential version, `Triggered` without `trigger_time`, vote tally above the guardian list, or list caps / percentage total exceeded). |
 | 40 | `DuplicateToken` | The same token address was supplied more than once in a `tokens` list. |
 | 41 | `BatchTooLarge` | A `batch_check_in` call supplied more than `MAX_BATCH_CHECK_IN` (50) will ids. |
 | 42 | `InvalidTokenCount` | The token list supplied to `create_will`, `clone_will`, `split_will`, or `batch_create_wills` was empty, or contained more than `MAX_TOKENS` entries. Also raised by `top_up` when the token is not already in the will's `balances` map and that map already holds `MAX_TOKENS` distinct tokens; topping up an already-held token stays allowed at the cap. |
