@@ -57,6 +57,7 @@ pub fn decode_will(env: &Env, raw: &Val) -> Result<Will, WillError> {
 /// current version is returned unchanged.
 pub fn upgrade(env: &Env, mut will: Will) -> Will {
     while will.schema_version < CURRENT_SCHEMA_VERSION {
+        let previous = will.schema_version;
         will = match will.schema_version {
             0 => {
                 let upgraded = migrate_v0_to_v1(env, will);
@@ -66,6 +67,9 @@ pub fn upgrade(env: &Env, mut will: Will) -> Will {
             // Every version below CURRENT_SCHEMA_VERSION must have a step.
             _ => soroban_sdk::panic_with_error!(env, WillError::UnsupportedSchemaVersion),
         };
+        // Each step must advance the schema by exactly one version and leave
+        // a structurally consistent will behind (#596).
+        crate::migration_rules::validate_step(env, &will, previous);
     }
     will
 }
