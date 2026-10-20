@@ -390,6 +390,8 @@ mod deadline_precision;
 #[cfg(test)]
 mod test_rdj_savyy;
 #[cfg(test)]
+mod issue_531_534_test;
+#[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 
 use soroban_sdk::{
