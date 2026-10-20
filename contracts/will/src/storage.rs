@@ -779,9 +779,6 @@ pub fn clear_guardian_cancel_vote(env: &Env, will_id: u64, guardian: &Address) {
 /// overwritten if that guardian votes again. This is the common case: most
 /// wills never see a guardian vote at all.
 pub fn reset_guardian_votes(env: &Env, will: &Will) {
-    if will.guardian_votes == 0 {
-        return;
-    }
     for guardian in will.guardians.iter() {
         let key = DataKey::GuardianVote(will.id, guardian.address.clone());
         env.storage().persistent().remove(&key);
