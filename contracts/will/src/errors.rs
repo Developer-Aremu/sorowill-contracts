@@ -225,8 +225,15 @@ pub enum WillError {
     /// would wipe those votes and let a fresh trigger bypass a cancel that was
     /// accumulating against it, so the update is refused (#488).
     GuardianCancelInProgress = 53,
-    /// The guardian weights of the live release votes add up to more than a `u32`,
-    /// so the quorum total cannot be counted safely. The vote is rejected rather
-    /// than letting the sum wrap around and reach the threshold (#620).
-    GuardianWeightOverflow = 54,
+    /// A schema migration produced a will that violates a structural
+    /// invariant (the version did not advance by exactly one step, a
+    /// `Triggered` will has no `trigger_time`, a vote tally exceeds the
+    /// guardian list, or the list caps / percentage total are exceeded), so
+    /// the migrated state is rejected instead of being persisted (#596).
+    MigrationInvariantViolation = 54,
+    /// `distribute` was asked to pay out more transfers than the
+    /// `MAX_RELEASE_PAYOUTS` budget (beneficiaries x tokens) allows, so the
+    /// release is rejected up front instead of running out of Soroban
+    /// transaction resources partway through the payout loop (#597).
+    DistributionTooLarge = 55,
 }
