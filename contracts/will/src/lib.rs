@@ -1554,6 +1554,8 @@ impl WillContract {
     ) {
         owner.require_auth();
         let mut will = load_owned(&env, will_id, &owner);
+        // Only an Active will can change its beneficiaries. Once triggered the
+        // list is frozen, so distribution pays the list the owner last set (#632).
         assert_status(&env, &will, WillStatus::Active, WillError::WillNotActive);
 
         assert_beneficiary_count(&env, &beneficiaries);
@@ -1910,6 +1912,8 @@ impl WillContract {
         }
 
         let now = env.ledger().timestamp();
+        // Every vote cast under the old guardian list is cleared here, before the
+        // new threshold takes effect, so no stale vote can count toward it (#631).
         storage::reset_guardian_votes(&env, &will);
         guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
@@ -4646,6 +4650,9 @@ impl WillContract {
         let digest = env.crypto().sha256(&preimage);
         let digest_bytes = Bytes::from_array(&env, &digest.to_array());
 
+        // A different salt yields a different digest, which matches no commitment,
+        // and the `claimed` flag below blocks a second claim with the same
+        // pre-image, so a modified salt cannot claim a slot twice (#633).
         // Find the matching hashed beneficiary slot.
         let mut found_idx: Option<u32> = None;
         for (i, hb) in will.hashed_beneficiaries.iter().enumerate() {
