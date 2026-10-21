@@ -1022,6 +1022,11 @@ impl WillContract {
     /// // The countdown resets; the will is still Active.
     /// assert_eq!(client.get_will(&will_id).status, WillStatus::Active);
     /// ```
+    /// Records an owner check-in and restarts the check-in countdown.
+    ///
+    /// Timestamps have one-second granularity. Two check-ins in the same second
+    /// store the same `last_checkin`, so the countdown lands on the same deadline
+    /// whichever one ran first. The outcome does not depend on their order (#624).
     pub fn check_in(env: Env, will_id: u64, caller: Address) {
         caller.require_auth();
         let mut will = load_will(&env, will_id);
@@ -4612,6 +4617,13 @@ impl WillContract {
         // and keeps the failure distinguishable from a genuine mismatch.
         if preimage.len() != PREIMAGE_LENGTH {
             panic_with_error!(&env, WillError::InvalidPreimageLength);
+        }
+
+        // Refuse an all-zero salt (#623). The salt is the pre-image's last 32 bytes.
+        // An all-zero salt is the first one an attacker tries, so it cannot be used
+        // to hide a commitment behind a guessable pre-image.
+        if (PREIMAGE_ADDRESS_LENGTH..PREIMAGE_LENGTH).all(|i| preimage.get(i).unwrap_or(0) == 0) {
+            panic_with_error!(&env, WillError::WeakPreimageSalt);
         }
 
         // Bind the pre-image to `claimant` before it is ever used (#369).
