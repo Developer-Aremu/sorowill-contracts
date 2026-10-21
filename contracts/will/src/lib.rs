@@ -398,6 +398,10 @@ mod test_rdj_savyy;
 #[cfg(test)]
 mod issue_531_534_test;
 #[cfg(test)]
+mod issue_628_test;
+#[cfg(test)]
+mod issue_630_test;
+#[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 #[cfg(test)]
 mod issue_572_575_test;
@@ -3851,6 +3855,9 @@ impl WillContract {
                 let existing = merged_guardians.get_unchecked(i);
                 if existing.address == guardian.address {
                     found = true;
+                    // The weight is the larger of the two entries, never a sum,
+                    // so a guardian listed on both wills cannot push the weight
+                    // past `u32::MAX` during a merge (#627).
                     let merged = Guardian {
                         address: existing.address.clone(),
                         weight: existing.weight.max(guardian.weight),
@@ -5403,6 +5410,9 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 ///    bounty share rounds above zero; that same token is both reduced to make
 ///    room and used to pay the keeper (#378). If no token's share rounds
 ///    above zero, no bounty is paid and no beneficiary share is reduced.
+///    `keeper_bounty_bps` is a ratio applied to that token's own raw balance,
+///    so the bounty is the same fraction of the balance whatever the token's
+///    decimals. No decimal normalization is needed or applied (#629).
 /// 2. The reserve for hashed beneficiaries that have not yet called
 ///    `reveal_and_claim` (#181/#186). It is withheld from the visible
 ///    beneficiaries and left in `will.balances` for later claiming.
