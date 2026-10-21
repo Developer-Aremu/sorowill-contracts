@@ -51,6 +51,7 @@ mod migration;
 mod guardian_vote_freshness;
 mod split_uniqueness_check;
 mod storage;
+mod release_lock;
 mod types;
 
 /// Reusable harness that drives entry points with arbitrary input and asserts
@@ -65,6 +66,10 @@ pub mod fuzz_harness;
 
 #[cfg(test)]
 mod fuzz_test;
+#[cfg(test)]
+mod test_dev_makeem;
+mod grace_boundary;
+mod batch_atomicity;
 
 /// Unit tests for the mixed percentage/fixed-amount `Allocation` model.
 #[cfg(test)]
@@ -78,6 +83,9 @@ mod allocation_test;
 /// used when the will is later triggered and released.
 #[cfg(test)]
 mod beneficiary_lifecycle_test;
+
+#[cfg(test)]
+mod test_freezyyy_arch;
 
 /// Cursor- and limit-based pagination regression tests for owner and
 /// beneficiary lookups.
@@ -322,6 +330,11 @@ mod issue_278_test;
 mod issue_279_test;
 #[cfg(test)]
 mod issue_280_test;
+mod distribute_limits;
+mod guardian_vote_purge;
+mod migration_rules;
+#[cfg(test)]
+mod test_valreb001;
 #[cfg(test)]
 mod issue_281_test;
 #[cfg(test)]
@@ -371,10 +384,17 @@ mod issue_490_493_test;
 mod update_will_settings_test;
 #[cfg(test)]
 mod wills_by_owner_status_test;
+mod balance_consistency;
+mod bounty_rounding;
+mod deadline_precision;
+#[cfg(test)]
+mod test_rdj_savyy;
+#[cfg(test)]
+mod issue_531_534_test;
 #[cfg(test)]
 // mod issue_486_489_test; // TODO: ContractEvents API
 #[cfg(test)]
-mod issue_564_567_test;
+mod issue_572_575_test;
 
 use soroban_sdk::{
     contract, contractimpl, log, panic_with_error, symbol_short, token, xdr::ToXdr, Address,
@@ -397,12 +417,12 @@ pub use types::{
 /// so that SDKs and apps can detect version mismatches at runtime via
 /// [`WillContract::get_contract_version`].
 ///
-/// Current value: **1.3.0** → `1_003_000`. 1.1.0 made `get_triggered_wills`
+/// Current value: **1.3.1** → `1_003_001`. 1.1.0 made `get_triggered_wills`
 /// take a `(cursor, limit)` page instead of returning the whole index (#368);
 /// 1.2.0 bound `reveal_and_claim` to the address in the pre-image (#369);
 /// 1.3.0 added `WillStatusTransition::seq` and made `check_in`/
 /// `batch_check_in` append audit-trail entries (#500).
-pub const CONTRACT_VERSION: u32 = 1_003_000;
+pub const CONTRACT_VERSION: u32 = 1_003_001;
 
 /// Number of seconds in a day, used to convert the day-denominated periods
 /// stored on a `Will` into absolute ledger timestamps.
@@ -542,7 +562,7 @@ soroban_sdk::contractmeta!(
 );
 // Kept in sync with CONTRACT_VERSION's semver-decoded form by
 // issue_272_test.rs; bump both together.
-soroban_sdk::contractmeta!(key = "Version", val = "1.3.0");
+soroban_sdk::contractmeta!(key = "Version", val = "1.3.1");
 soroban_sdk::contractmeta!(
     key = "Homepage",
     val = "https://github.com/SoroWill/sorowill-contracts"
@@ -932,7 +952,8 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         if let Some(deadline) = will.confirmation_deadline {
-            if now > deadline {
+            // One ledger interval of slack for coarse ledger timestamps (#593).
+            if deadline_precision::confirmation_expired(now, deadline) {
                 panic_with_error!(&env, WillError::ConfirmationWindowExpired);
             }
         }
@@ -1062,6 +1083,10 @@ impl WillContract {
         // partially applied and the `batch_checkin` count always matches the
         // number of distinct wills actually checked in (#355).
         batch_check_in_limit::assert_no_duplicates(&env, &will_ids);
+        // Validate every will (exists, owned, Active) in a read-only pass
+        // before the first write, so an invalid element anywhere in the batch
+        // rejects the whole batch with nothing applied (#590).
+        batch_atomicity::prevalidate_check_in(&env, &will_ids, &owner);
         let now = env.ledger().timestamp();
         let count = will_ids.len();
 
@@ -1201,6 +1226,8 @@ impl WillContract {
         will.guardian_votes = 0;
         will.guardian_cancel_vote_weight = 0;
         will.guardian_cancel_votes = 0;
+        // Never persist a will whose legacy mirror disagrees with the map (#592).
+        balance_consistency::sync_primary_balance(&mut will);
         storage::save_will(&env, &will);
 
         storage::unindex_triggered_will(&env, will_id);
@@ -1289,6 +1316,7 @@ impl WillContract {
     /// // Each beneficiary's token balance reflects their basis-point share.
     /// ```
     pub fn release_inheritance(env: Env, will_id: u64, caller: Option<Address>) {
+        release_lock::acquire(&env, will_id);
         let mut will = load_will(&env, will_id);
         assert_status(
             &env,
@@ -1315,7 +1343,7 @@ impl WillContract {
         // call below) conditional on the grace period *not yet* having
         // expired, the exact opposite of this function's purpose.
         let now = env.ledger().timestamp();
-        if now < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(now, grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -1349,6 +1377,7 @@ impl WillContract {
         assert_release_preconditions(&env, will_id, &will);
 
         distribute(&env, &mut will, &caller);
+        release_lock::release(&env, will_id);
     }
 
     /// Delivers a payout that failed during a previous `distribute` call
@@ -1867,6 +1896,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for addr in guardians.iter() {
@@ -1969,6 +1999,7 @@ impl WillContract {
 
         let now = env.ledger().timestamp();
         storage::reset_guardian_votes(&env, &will);
+        guardian_vote_purge::purge_guardian_vote_records(&env, &will);
         storage::reset_guardian_cancel_votes(&env, &will);
         let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
         for g in guardians.iter() {
@@ -2157,6 +2188,7 @@ impl WillContract {
 
             let now = env.ledger().timestamp();
             storage::reset_guardian_votes(&env, &will);
+            guardian_vote_purge::purge_guardian_vote_records(&env, &will);
             storage::reset_guardian_cancel_votes(&env, &will);
             let mut guardian_structs: Vec<Guardian> = Vec::new(&env);
             for addr in new_guardians.iter() {
@@ -2263,15 +2295,15 @@ impl WillContract {
         let new_balance = prev + amount;
 
         // --- EFFECTS: update state and persist before the external transfer ---
-        will.balances.set(token.clone(), new_balance);
         // `will.balance` is a legacy mirror of `will.balances[will.token]` kept
         // for backward compatibility until callers migrate fully to the
         // multi-token map; it must be kept in sync here or every reader that
         // still trusts it (e.g. split_will's balance check, reveal_and_claim's
         // share computation) will silently operate on a stale figure.
-        if token == will.token {
-            will.balance = new_balance;
-        }
+        // `record_balance` updates both in one step and re-derives the mirror
+        // from the map, so a top-up of a secondary token also heals a stale
+        // mirror (#592).
+        balance_consistency::record_balance(&mut will, &token, new_balance);
         storage::save_will(&env, &will);
 
         // Increment locked value for this token
@@ -2532,6 +2564,12 @@ impl WillContract {
     ///
     /// For totals across all pages (will count, locked value per token) call
     /// [`Self::get_owner_stats`] instead of iterating every page.
+    ///
+    /// # Consistency
+    /// The cursor is an id bound ("ids greater than `cursor`"), not a
+    /// position, so wills added or removed between pages never cause an
+    /// entry to be skipped or repeated; new wills appear on later pages.
+    /// Pages are not a snapshot. See `docs/PAGINATION_CONSISTENCY.md` (#591).
     pub fn get_wills_by_owner(
         env: Env,
         owner: Address,
@@ -2921,6 +2959,9 @@ impl WillContract {
         will.guardian_votes = live_votes;
         storage::save_will(&env, &will);
 
+        // Events are part of this invocation: if the release below fails, the
+        // host discards this event along with the state (see
+        // docs/EVENT_ATOMICITY.md, #594).
         events::guardian_voted(&env, will_id, &guardian, weight, will.guardian_vote_weight);
 
         if will.guardian_vote_weight >= will.guardian_threshold
@@ -3432,6 +3473,12 @@ impl WillContract {
     /// - [`WillError::InvalidTokenCount`] if any individual spec's token list
     ///   is empty or exceeds `MAX_TOKENS`.
     /// - Any error that [`create_will`] would panic with for an individual spec.
+    ///
+    /// # Atomicity
+    /// All-or-nothing: if any spec fails validation or its token transfer,
+    /// the invocation panics and the host discards every will, index entry and
+    /// transfer made earlier in the call, so a bad spec in the middle of the
+    /// batch never leaves earlier wills created (#590).
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     pub fn batch_create_wills(
         env: Env,
@@ -4367,6 +4414,9 @@ impl WillContract {
     /// - [`WillError::InvalidPreimage`] if `commitment` is not a 32-byte digest.
     /// - `commitment`: SHA-256 hash of the pre-image `address_bytes || salt_bytes`.
     ///   Must be exactly 32 bytes — see the validation rules below.
+    ///   The contract cannot verify the salt's entropy: use 32 bytes from a
+    ///   cryptographically secure RNG, fresh per commitment (see
+    ///   `docs/HASHED_BENEFICIARY_SALT_GUIDANCE.md`, #589).
     /// - `percentage`: share of the will's balance for this beneficiary, in
     ///   basis points. Must be greater than zero.
     ///
@@ -4538,7 +4588,7 @@ impl WillContract {
             WillError::WillNotReleased,
         );
 
-        if env.ledger().timestamp() < grace_deadline(&will) {
+        if !grace_boundary::grace_elapsed(env.ledger().timestamp(), grace_deadline(&will)) {
             panic_with_error!(&env, WillError::GracePeriodNotExpired);
         }
 
@@ -4629,7 +4679,21 @@ impl WillContract {
             updated_balances.set(token_addr, total - share);
         }
 
-        // --- EFFECTS: mutate and persist all state before any external call ---
+        // --- INTERACTIONS: external token transfers execute before state is marked claimed ---
+        // Transfer tokens before marking claimed so that token-transfer failures do not
+        // leave the hashed beneficiary slot permanently marked as claimed.
+        let contract_address = env.current_contract_address();
+        for (token_addr, share) in transfer_plan.iter() {
+            if share > 0 {
+                token::Client::new(&env, &token_addr).transfer(
+                    &contract_address,
+                    &claimant,
+                    &share,
+                );
+            }
+        }
+
+        // --- EFFECTS: mutate and persist all state after successful transfers ---
         will.balances = updated_balances;
         // `will.balance` mirrors `will.balances[will.token]` for backward
         // compatibility; keep it in sync so other readers of the legacy field
@@ -4651,18 +4715,6 @@ impl WillContract {
         }
         will.hashed_beneficiaries = updated_hb;
         storage::save_will(&env, &will);
-
-        // --- INTERACTIONS: external token transfers execute after state is settled ---
-        let contract_address = env.current_contract_address();
-        for (token_addr, share) in transfer_plan.iter() {
-            if share > 0 {
-                token::Client::new(&env, &token_addr).transfer(
-                    &contract_address,
-                    &claimant,
-                    &share,
-                );
-            }
-        }
 
         events::hashed_claimed(&env, will_id, &claimant, primary_share);
     }
@@ -5284,13 +5336,15 @@ fn assert_valid_periods(env: &Env, checkin_period_days: u64, grace_period_days: 
 ///
 /// # Rounding Behavior
 ///
-/// Each token's distribution is calculated as: `share = balance * (basis_points / 10_000)`.
-/// Integer division truncates toward zero, which may result in zero shares for
+/// Each token's distribution is calculated using floor rounding:
+/// `share = floor(balance * basis_points / 10_000)`.
+/// Integer division rounds down (truncation toward zero), which may result in zero shares for
 /// beneficiaries with very small calculated amounts. For example, distributing 9 units
 /// equally among 10 beneficiaries (900 basis points each) gives each person 0.9 units,
-/// which truncates to 0.
+/// which rounds down (floor) to 0.
 ///
-/// To ensure no dust is left behind, any rounding remainder is paid to the final
+/// To ensure no dust is left behind, any rounding remainder (the difference between the
+/// token balance and the sum of all floor-rounded shares) is paid to the final
 /// beneficiary in the list. This guarantees the full balance of every token is
 /// always distributed across beneficiaries.
 ///
@@ -5320,10 +5374,10 @@ fn assert_valid_periods(env: &Env, checkin_period_days: u64, grace_period_days: 
 /// amounts are computed from the pre-mutation balances, then all state is
 /// committed (status, balances, indexes), and only then are the external
 /// token transfers executed.
-/// Calculates `floor(total * basis_points / 10_000)` without ever forming
-/// the potentially overflowing `total * basis_points` intermediate. The
-/// workspace release profile enables overflow checks, but this decomposition
-/// also makes the calculation safe independently of that compiler setting.
+/// Calculates `floor(total * basis_points / 10_000)` using floor rounding (integer division
+/// truncating towards zero) without ever forming the potentially overflowing
+/// `total * basis_points` intermediate. The workspace release profile enables overflow
+/// checks, but this decomposition also makes the calculation safe independently of that compiler setting.
 pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
     const BASIS_POINTS_TOTAL: i128 = 10_000;
 
@@ -5357,12 +5411,12 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 ///
 /// # Rounding
 ///
-/// Each token's distribution is calculated as
-/// `share = balance * (basis_points / 10_000)`. Integer division truncates
-/// toward zero, which may result in zero shares for beneficiaries with very
+/// Each token's distribution is calculated using floor rounding:
+/// `share = floor(balance * basis_points / 10_000)`. Integer division strictly rounds
+/// down (truncation toward zero), which may result in zero shares for beneficiaries with very
 /// small calculated amounts: distributing 9 units equally among 10
-/// beneficiaries (900 bp each) gives each 0.9 units, which truncates to 0.
-/// The remainder is paid to the final percentage beneficiary, which
+/// beneficiaries (900 bp each) gives each 0.9 units, which rounds down (floor) to 0.
+/// The rounding remainder is absorbed by the final percentage beneficiary, which
 /// guarantees the full balance of every token is always distributed.
 ///
 /// **Note:** Callers should ensure that the will's balance is sufficient to
@@ -5371,17 +5425,20 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 /// getting zero after rounding. Consider validating a minimum will amount at
 /// creation time (see issue #37).
 ///
-/// # Leftover value
+/// # Dust and Leftover Handling: Refunded to Owner vs Retained
 ///
-/// If a will has **no** percentage beneficiaries (a `FixedAmount`-only will,
-/// which `assert_valid_allocations` deliberately allows to be
-/// under-allocated) the value left over after the fixed amounts have been
-/// paid has no beneficiary left to receive it. Rather than leaving those
-/// tokens stranded in the contract with no accounting and no withdrawal path
-/// once the will is `Released`, the remainder of every token is refunded to
-/// the will's owner and reported via [`events::leftover_refunded`] (#383).
-/// The refund is a no-op for wills that do have percentage beneficiaries,
-/// since the last one already absorbs the whole remainder.
+/// The contract guarantees that **no dust is ever retained** in contract storage
+/// after distribution is complete:
+///
+/// - **Percentage rounding dust**: In wills with percentage beneficiaries, fractional
+///   dust from integer division is allocated to the final percentage beneficiary. The
+///   contract retains 0 units.
+/// - **FixedAmount unallocated leftover**: In wills with only `FixedAmount` beneficiaries
+///   (or unallocated balance headroom), leftover tokens are **refunded to the owner**
+///   and logged via [`events::leftover_refunded`] (#383).
+/// - **Zero retention guarantee**: Once a will transitions to `Released`, all token
+///   balances in `will.balances` are cleared to 0 and all funds are fully evacuated to
+///   beneficiaries or refunded to the owner.
 ///
 /// Follows checks-effects-interactions ordering: all per-beneficiary share
 /// amounts (and the owner refund) are computed from the pre-mutation
@@ -5398,6 +5455,9 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
     let contract_address = env.current_contract_address();
     let count = will.beneficiaries.len();
     let token_count = will.balances.len();
+
+    // Pre-flight resource bound, before any share is computed (#597).
+    distribute_limits::assert_payout_budget(env, count, token_count);
 
     // --- COMPUTE: calculate every share from the current (pre-mutation) balances ---
     // Calculate keeper bounty if applicable (not paid to owner, only to other keepers)
@@ -5432,7 +5492,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
             if total == 0 {
                 continue;
             }
-            let amount = proportional_share(total, will.keeper_bounty_bps);
+            let amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             if amount > 0 {
                 bounty_token = Some((token_addr, amount));
                 break;
@@ -5479,7 +5539,7 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         let mut token_bounty: i128 = 0;
         if should_pay_bounty && !bounty_computed {
             bounty_computed = true;
-            bounty_amount = proportional_share(total, will.keeper_bounty_bps);
+            bounty_amount = bounty_rounding::keeper_bounty(total, will.keeper_bounty_bps);
             token_bounty = bounty_amount;
         }
 
@@ -5532,7 +5592,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 let share = if percentage_index == percentage_count {
                     percentage_remaining
                 } else {
-                    let portion = proportional_share(remaining, bp);
+                    // Never round a non-final share below one unit while the
+                    // balance can still cover every later beneficiary (#599).
+                    let portion = distribute_limits::min_one_unit_share(
+                        proportional_share(remaining, bp),
+                        percentage_remaining,
+                        percentage_count - percentage_index,
+                    );
                     percentage_remaining -= portion;
                     portion
                 };
@@ -5544,13 +5610,13 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
         // beneficiary to absorb the leftover (e.g. after a `top_up`). Give it
         // to the final beneficiary instead of leaving it stranded in the
         // contract once the balances map is cleared (#456).
-        if percentage_count == 0 && remaining > 0 && !shares.is_empty() {
-            let last = shares.len() - 1;
-            let (addr, share) = shares.get(last).unwrap();
-            shares.set(last, (addr, share + remaining));
+        // Any dust or leftover remainder after payouts is refunded to the
+        // owner at the end so funds are neither stranded nor distorted.
+        if remaining > 0 {
+            refund_plan.push_back((token_addr.clone(), remaining));
         }
 
-        // Conservation check (#456): the planned payouts for this token must
+        // Conservation check (#456): the planned payouts and refund for this token must
         // account for exactly its balance. Anything else means funds would be
         // silently lost in, or over-drawn from, the contract.
         let mut planned: i128 = token_bounty;
@@ -5563,16 +5629,16 @@ fn distribute(env: &Env, will: &mut Will, keeper: &Option<Address>) {
                 None => panic_with_error!(env, WillError::DistributionMismatch),
             };
         }
+        for (t, refund_amt) in refund_plan.iter() {
+            if t == token_addr {
+                planned = match planned.checked_add(refund_amt) {
+                    Some(v) => v,
+                    None => panic_with_error!(env, WillError::DistributionMismatch),
+                };
+            }
+        }
         if planned != total {
             panic_with_error!(env, WillError::DistributionMismatch);
-        }
-
-        // With no percentage beneficiaries there is nobody left to absorb what
-        // the fixed amounts did not claim. Refunding it to the owner keeps the
-        // tokens from being stranded in the contract with no accounting and no
-        // withdrawal path once the will is `Released` (#383).
-        if percentage_count == 0 && remaining > 0 {
-            refund_plan.push_back((token_addr.clone(), remaining));
         }
 
         transfer_plan.push_back((token_addr, shares));
