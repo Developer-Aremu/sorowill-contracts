@@ -5336,13 +5336,15 @@ fn assert_valid_periods(env: &Env, checkin_period_days: u64, grace_period_days: 
 ///
 /// # Rounding Behavior
 ///
-/// Each token's distribution is calculated as: `share = balance * (basis_points / 10_000)`.
-/// Integer division truncates toward zero, which may result in zero shares for
+/// Each token's distribution is calculated using floor rounding:
+/// `share = floor(balance * basis_points / 10_000)`.
+/// Integer division rounds down (truncation toward zero), which may result in zero shares for
 /// beneficiaries with very small calculated amounts. For example, distributing 9 units
 /// equally among 10 beneficiaries (900 basis points each) gives each person 0.9 units,
-/// which truncates to 0.
+/// which rounds down (floor) to 0.
 ///
-/// To ensure no dust is left behind, any rounding remainder is paid to the final
+/// To ensure no dust is left behind, any rounding remainder (the difference between the
+/// token balance and the sum of all floor-rounded shares) is paid to the final
 /// beneficiary in the list. This guarantees the full balance of every token is
 /// always distributed across beneficiaries.
 ///
@@ -5372,10 +5374,10 @@ fn assert_valid_periods(env: &Env, checkin_period_days: u64, grace_period_days: 
 /// amounts are computed from the pre-mutation balances, then all state is
 /// committed (status, balances, indexes), and only then are the external
 /// token transfers executed.
-/// Calculates `floor(total * basis_points / 10_000)` without ever forming
-/// the potentially overflowing `total * basis_points` intermediate. The
-/// workspace release profile enables overflow checks, but this decomposition
-/// also makes the calculation safe independently of that compiler setting.
+/// Calculates `floor(total * basis_points / 10_000)` using floor rounding (integer division
+/// truncating towards zero) without ever forming the potentially overflowing
+/// `total * basis_points` intermediate. The workspace release profile enables overflow
+/// checks, but this decomposition also makes the calculation safe independently of that compiler setting.
 pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
     const BASIS_POINTS_TOTAL: i128 = 10_000;
 
@@ -5409,12 +5411,12 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 ///
 /// # Rounding
 ///
-/// Each token's distribution is calculated as
-/// `share = balance * (basis_points / 10_000)`. Integer division truncates
-/// toward zero, which may result in zero shares for beneficiaries with very
+/// Each token's distribution is calculated using floor rounding:
+/// `share = floor(balance * basis_points / 10_000)`. Integer division strictly rounds
+/// down (truncation toward zero), which may result in zero shares for beneficiaries with very
 /// small calculated amounts: distributing 9 units equally among 10
-/// beneficiaries (900 bp each) gives each 0.9 units, which truncates to 0.
-/// The remainder is paid to the final percentage beneficiary, which
+/// beneficiaries (900 bp each) gives each 0.9 units, which rounds down (floor) to 0.
+/// The rounding remainder is absorbed by the final percentage beneficiary, which
 /// guarantees the full balance of every token is always distributed.
 ///
 /// **Note:** Callers should ensure that the will's balance is sufficient to
