@@ -5425,17 +5425,20 @@ pub(crate) fn proportional_share(total: i128, basis_points: u32) -> i128 {
 /// getting zero after rounding. Consider validating a minimum will amount at
 /// creation time (see issue #37).
 ///
-/// # Leftover value
+/// # Dust and Leftover Handling: Refunded to Owner vs Retained
 ///
-/// If a will has **no** percentage beneficiaries (a `FixedAmount`-only will,
-/// which `assert_valid_allocations` deliberately allows to be
-/// under-allocated) the value left over after the fixed amounts have been
-/// paid has no beneficiary left to receive it. Rather than leaving those
-/// tokens stranded in the contract with no accounting and no withdrawal path
-/// once the will is `Released`, the remainder of every token is refunded to
-/// the will's owner and reported via [`events::leftover_refunded`] (#383).
-/// The refund is a no-op for wills that do have percentage beneficiaries,
-/// since the last one already absorbs the whole remainder.
+/// The contract guarantees that **no dust is ever retained** in contract storage
+/// after distribution is complete:
+///
+/// - **Percentage rounding dust**: In wills with percentage beneficiaries, fractional
+///   dust from integer division is allocated to the final percentage beneficiary. The
+///   contract retains 0 units.
+/// - **FixedAmount unallocated leftover**: In wills with only `FixedAmount` beneficiaries
+///   (or unallocated balance headroom), leftover tokens are **refunded to the owner**
+///   and logged via [`events::leftover_refunded`] (#383).
+/// - **Zero retention guarantee**: Once a will transitions to `Released`, all token
+///   balances in `will.balances` are cleared to 0 and all funds are fully evacuated to
+///   beneficiaries or refunded to the owner.
 ///
 /// Follows checks-effects-interactions ordering: all per-beneficiary share
 /// amounts (and the owner refund) are computed from the pre-mutation

@@ -177,6 +177,13 @@ If you need more than 10 heirs, you can:
 - **Keeper bounty comes out of the will.** The bounty is deducted from the first token's balance before the beneficiary split rather than paid on top of it.
 - **Balances are conserved.** For every token, bounty plus beneficiary shares must equal the balance exactly, or the release aborts with `DistributionMismatch`. Percentage rounding dust goes to the last percentage beneficiary; for fixed-amount-only wills any leftover (e.g. from `top_up`) goes to the last beneficiary.
 
+### Dust and Leftover Handling: Refunded vs Retained
+
+The contract enforces strict balance conservation: **no dust is ever retained** or stranded in the contract.
+- **Percentage rounding dust (Beneficiary allocation):** During proportional distribution, fractional truncation remainder (dust) resulting from integer division is allocated to the final percentage beneficiary. The contract retains 0 units.
+- **Unallocated balance / leftover in fixed-amount wills (Refunded to Owner):** For wills containing only `Allocation::FixedAmount` beneficiaries (or where fixed allocations do not exhaust the total balance), any leftover balance is refunded directly to the will owner and emitted via the `leftover_refunded` event, rather than being retained by the contract.
+- **Multi-token conservation:** Every token's `balances` entry is fully cleared to zero upon release (`Released` status), ensuring all funds are completely drained from contract custody to either the designated beneficiaries or refunded to the owner.
+
 `checkin_period_days` and `grace_period_days` passed to `create_will` must each be at least `1` day (and at most `MAX_PERIOD_DAYS`); a value of `0` panics with `WillError::InvalidPeriod`.
 
 ## Contract Events
